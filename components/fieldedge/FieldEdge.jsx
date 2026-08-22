@@ -8,6 +8,9 @@ import {
   CORE, POS_LIST, DATA_SEASON, SEASONS_USED, label, mulberry32, strHash,
 } from "@/lib/fantasy/universe";
 import BACKTEST from "@/lib/fantasy/data/backtest.json";
+import { T, SectionBar, SliderRow, Chip, Stat } from "./atoms";
+import DraftRoom from "./DraftRoom";
+import Methodology from "./Methodology";
 
 /* ============================================================
    FIELD EDGE - Fantasy Football Analytics
@@ -38,13 +41,6 @@ const DEFAULT_SETTINGS = {
   roleMult: 1, roleNote: null,
 };
 
-const T = {
-  red: "#F03E3E", black: "#000000", warmGray: "#A39382", paper: "#FFFFFF",
-  plum: "#522A45", lightBlue: "#B8C5D8", pink: "#E0BCB0", brightBlue: "#149FDA",
-  gold: "#D5AB32", cat2: "#4497F9",
-  pos: "#4F7A3D", neg: "#A8483D", flag: "#E08214",
-  hair: "rgba(163,147,130,0.4)",
-};
 
 /* ---------- shared math ---------- */
 
@@ -231,53 +227,6 @@ function makeBins(simsA, simsB, nBins = 22) {
 }
 
 /* ---------- structural atoms ---------- */
-
-function SectionBar({ num, title }) {
-  return (
-    <div>
-      <div style={{ height: 8, background: T.black }} />
-      <div style={{ height: 8 }} />
-      <div className="eyebrow" style={{ color: T.red, marginBottom: 4 }}>{num} / {title}</div>
-    </div>
-  );
-}
-
-function SliderRow({ label, value, min, max, step = 1, onChange, fmt }) {
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-        <span className="subhead">{label}</span>
-        <span className="data" style={{ fontWeight: 500 }}>{fmt ? fmt(value) : value}</span>
-      </div>
-      <input type="range" min={min} max={max} step={step} value={value}
-        onChange={e => onChange(Number(e.target.value))} style={{ width: "100%" }} aria-label={label} />
-    </div>
-  );
-}
-
-function Chip({ active, onClick, children, tone }) {
-  return (
-    <button onClick={onClick} className="chip"
-      style={{
-        background: active ? (tone || T.black) : T.paper,
-        color: active ? T.paper : T.black,
-        borderColor: active ? (tone || T.black) : T.hair,
-      }}>{children}</button>
-  );
-}
-
-function Stat({ label, value, sub, tone, marker }) {
-  return (
-    <div style={{ flex: 1, minWidth: 120, borderTop: "1px solid " + T.black, paddingTop: 8 }}>
-      <div className="subhead" style={{ color: T.warmGray, display: "flex", alignItems: "center", gap: 6 }}>
-        {marker && <span style={{ width: 4, height: 4, background: T.red, display: "inline-block" }} />}
-        {label}
-      </div>
-      <div className="data" style={{ fontSize: 26, fontWeight: 700, color: tone || T.black, lineHeight: 1.1, marginTop: 2 }}>{value}</div>
-      {sub && <div className="data" style={{ fontSize: 10, color: T.warmGray }}>{sub}</div>}
-    </div>
-  );
-}
 
 function PlayerPicker({ id, value, onPick, ariaLabel }) {
   const [text, setText] = useState(value ? label(BY_ID.get(value)) : "");
@@ -514,7 +463,7 @@ export default function FieldEdge() {
           </div>
 
           <div style={{ display: "flex", gap: 24, marginTop: 24, flexWrap: "wrap" }}>
-            {[["lab", "Player Lab"], ["h2h", "Start / Sit"], ["draft", "Draft Board"]].map(([k, l]) => (
+            {[["lab", "Player Lab"], ["h2h", "Start / Sit"], ["draft", "Draft Board"], ["room", "Draft Room"], ["method", "Methodology"]].map(([k, l]) => (
               <button key={k} onClick={() => setTab(k)} className="subhead"
                 style={{
                   background: "none", border: "none", cursor: "pointer", padding: "0 0 6px",
@@ -525,6 +474,9 @@ export default function FieldEdge() {
           </div>
         </div>
 
+        {tab === "room" && <DraftRoom />}
+        {tab === "method" && <Methodology />}
+        {tab !== "room" && tab !== "method" && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 48, marginTop: 40 }}>
 
           <div style={{ flex: "1 1 300px", minWidth: 280 }}>
@@ -899,41 +851,9 @@ export default function FieldEdge() {
                     )}
                   </div>
 
-                  <div style={{ marginTop: 40 }}>
-                    <SectionBar num="07" title="Model Validation" />
-                    <div className="display" style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>
-                      Backtested on {BACKTEST.targets.length} held-out seasons
-                    </div>
-                    <p className="body-serif" style={{ margin: "0 0 12px" }}>
-                      {`Each modeling layer predicted seasons ${BACKTEST.targets.join(", ")} using only earlier
-                      data, then was scored against what actually happened. Rank r is the Spearman correlation
-                      between projected and actual season points; MAE-36 is the mean error among the top
-                      draft-relevant players at each position.`}
-                    </p>
-                    <table style={{ width: "100%", borderCollapse: "collapse" }} className="data">
-                      <thead>
-                        <tr>
-                          <th style={{ textAlign: "left", fontSize: 11, fontWeight: 500, borderBottom: "1px solid " + T.black, padding: "5px 4px" }}>Model layer</th>
-                          <th style={{ textAlign: "right", fontSize: 11, fontWeight: 500, borderBottom: "1px solid " + T.black, padding: "5px 4px" }}>Rank r</th>
-                          <th style={{ textAlign: "right", fontSize: 11, fontWeight: 500, borderBottom: "1px solid " + T.black, padding: "5px 4px" }}>MAE-36</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Object.entries(BACKTEST.byVariant).map(([v, b]) => (
-                          <tr key={v}>
-                            <td style={{ fontSize: 11.5, padding: "6px 4px", borderBottom: "1px solid " + T.hair, fontWeight: v === "4" ? 700 : 400 }}>{b.label}</td>
-                            <td style={{ fontSize: 11.5, textAlign: "right", padding: "6px 4px", borderBottom: "1px solid " + T.hair, fontWeight: v === "4" ? 700 : 400 }}>{b.overall.spearman.toFixed(3)}</td>
-                            <td style={{ fontSize: 11.5, textAlign: "right", padding: "6px 4px", borderBottom: "1px solid " + T.hair, fontWeight: v === "4" ? 700 : 400 }}>{b.overall.maeTop.toFixed(1)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    <p className="data" style={{ fontSize: 9, color: T.warmGray, marginTop: 6, lineHeight: 1.5 }}>
-                      Usage/recency and age improve on the raw baseline; injury comps barely move the mean and
-                      are applied mostly as wider risk; blending the market consensus is the largest single gain.
-                      The shipped board runs the full bolded model.
-                    </p>
-                  </div>
+                  <p className="data" style={{ fontSize: 10, color: T.warmGray, marginTop: 24 }}>
+                    Full model methodology and the held-out backtest live in the Methodology tab.
+                  </p>
                 </div>
               </div>
             )}
@@ -947,7 +867,7 @@ export default function FieldEdge() {
                 deterministically. Ages from nflverse birthdates as of the ${DATA_SEASON} draft. `}
                 Model. Season projections are recency- and games-weighted per-game rates x an availability-shrunk
                 expected-games estimate, re-based through position age curves, with empirical injury-recovery
-                multipliers learned from every comparable position-x-body-part case since 2010 (backtested above;
+                multipliers learned from every comparable position-x-body-part case since 2010 (backtested in the Methodology tab;
                 weekly what-if baselines divide that projection per game). Age effects use position-specific career
                 curves applied relative to actual age; injury statuses set an active-game probability and an
                 effectiveness discount; wind and precipitation scale with positional pass-game sensitivity and are
@@ -960,6 +880,7 @@ export default function FieldEdge() {
             </div>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

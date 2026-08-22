@@ -68,11 +68,16 @@ and everything else works normally.
 
 ## Refreshing the data
 
+A scheduled GitHub Action (`.github/workflows/refresh-data.yml`) rebuilds the
+dataset every Tuesday and Friday morning and commits it, so a deployed site
+picks up fresh FantasyPros market consensus automatically. Manual refresh:
+
 ```bash
 npm run data                                # refresh stats + market consensus
 python3 scripts/backtest.py                 # re-validate the model (pip install pyarrow)
 python3 scripts/build-dataset.py --seasons 2024 2025 2026
 ```
 
-Downloads regular-season player stats and birthdates from nflverse-data and
-rewrites `lib/fantasy/data/projections.json`.
+Downloads regular-season player stats, injuries, and birthdates from
+nflverse-data plus the DynastyProcess ECR mirror, and rewrites
+`lib/fantasy/data/projections.json`.

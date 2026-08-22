@@ -1,0 +1,30 @@
+name: Refresh dataset
+
+on:
+  schedule:
+    # Tuesdays and Fridays, 11:00 UTC (morning US time) — fresh market
+    # consensus lands daily; stats only change when a season completes.
+    - cron: "0 11 * * 2,5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Rebuild dataset from nflverse + market consensus
+        run: python3 scripts/build-dataset.py
+      - name: Commit if changed
+        run: |
+          git config user.name "fieldedge-data-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add lib/fantasy/data/projections.json
+          git diff --cached --quiet && echo "no changes" && exit 0
+          git commit -m "Data refresh: nflverse stats + market consensus"
+          git push
