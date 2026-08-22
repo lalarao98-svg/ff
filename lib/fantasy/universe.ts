@@ -34,6 +34,8 @@ export interface UniversePlayer {
   ecr: number | null;
   /** Expert disagreement on that rank. */
   ecrSd: number | null;
+  /** ESPN player id (live draft sync). */
+  espnId: number | null;
   /** Season fantasy-point totals acting as sources (real + deterministic spread). */
   src: number[];
   /** How many real seasons back this player's sources. */
@@ -88,6 +90,12 @@ function synthSources(anchor: number, id: string, n: number, vol: number): numbe
   return out;
 }
 
+interface RawExtras {
+  age?: number;
+  wsd?: number;
+  espnId?: number;
+}
+
 interface ModelFields {
   proj: number;
   projPg: number;
@@ -128,6 +136,7 @@ function buildUniverse(): UniversePlayer[] {
       injPart: model?.injPart ?? null,
       ecr: model?.ecr ?? null,
       ecrSd: model?.ecrSd ?? null,
+      espnId: (raw as RawExtras).espnId ?? null,
       mean: mean(src),
       sdPts: mad(src),
       posRank: 0,

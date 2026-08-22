@@ -223,6 +223,34 @@ export interface Candidate {
   finalValue: number;
   /** Points lost at this position by passing until your next pick. */
   waitCost: number;
+  /** Projected points above the positional replacement baseline. */
+  vor: number;
+  /** How far the market expects this player to fall past the current pick
+   * (positive = value vs consensus, negative = a reach). */
+  adpDelta: number | null;
+  /** Probability the player is still available at your next pick, from a
+   * Normal(ecr, sd) selection model over the market consensus. */
+  survival: number | null;
+}
+
+function normalCdf(z: number): number {
+  // Abramowitz-Stegun approximation; plenty for a survival readout.
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.3989423 * Math.exp((-z * z) / 2);
+  let p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  if (z > 0) p = 1 - p;
+  return p;
+}
+
+/** P(player still on the board at pick `atPick` | available at pick `nowPick`),
+ * modeling his selection pick as Normal(ecr, max(6, 2.5 x expert sd)). */
+export function survivalProb(p: UniversePlayer, nowPick: number, atPick: number): number | null {
+  if (p.ecr == null) return null;
+  const sd = Math.max(6, 2.5 * (p.ecrSd ?? 3));
+  const pNow = 1 - normalCdf((nowPick - p.ecr) / sd);
+  const pAt = 1 - normalCdf((atPick - p.ecr) / sd);
+  if (pNow <= 1e-9) return 0;
+  return Math.max(0, Math.min(1, pAt / pNow));
 }
 
 export interface Recommendation {
@@ -264,6 +292,8 @@ export function recommend(cfg: DraftConfig, picks: DraftPick[]): Recommendation 
   scored.sort((a, b) => b.mv - a.mv);
   const shortlist = [...new Set([...scored.slice(0, 14).map((s) => s.p), ...nowAvailable.slice(0, 6)])].slice(0, 16);
 
+  const nowPickNo = i + 1; // 1-based, matches ECR's pick scale
+  const nextPickNo = myFuture.length > 1 ? myFuture[1] + 1 : null;
   const candidates: Candidate[] = shortlist.map((p) => {
     const sim = simulateDraft(cfg, picks, p.id);
     const bestNow = Math.max(...nowAvailable.filter((q) => q.pos === p.pos).slice(0, 40).map((q) => q.proj));
@@ -271,6 +301,9 @@ export function recommend(cfg: DraftConfig, picks: DraftPick[]): Recommendation 
       p,
       finalValue: sim.value,
       waitCost: Math.max(0, bestNow - (bestLater[p.pos] ?? 0)),
+      vor: p.proj - (POS_BASELINE[p.pos] ?? 0),
+      adpDelta: p.ecr != null ? Math.round(nowPickNo - p.ecr) : null,
+      survival: nextPickNo != null ? survivalProb(p, nowPickNo, nextPickNo) : null,
     };
   });
   candidates.sort((a, b) => b.finalValue - a.finalValue);

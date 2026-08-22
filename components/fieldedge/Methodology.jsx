@@ -136,7 +136,11 @@ export default function Methodology() {
           starters at full projection, bench at a steep discount above replacement. &ldquo;Cost of
           waiting&rdquo; is the points you give up at a position by passing until your next turn — the
           quantity that decides positional runs. Every real pick you record overwrites the assumption
-          for that slot and the whole plan re-optimizes.
+          for that slot and the whole plan re-optimizes. Connected to an ESPN league, the room mirrors
+          the real draft: the server polls ESPN&rsquo;s league API every 2.5 seconds (auth cookies never
+          leave the server), maps each selection to the model by ESPN player id, and recomputes on every
+          new pick — including P(next), the probability a candidate survives to your next turn under a
+          Normal(consensus rank, expert-disagreement) selection model.
         </P>
       </div>
 

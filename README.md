@@ -45,6 +45,8 @@ around their anchor.
   (stats, ages, weekly volatility, and model fields) from nflverse-data
 - `app/api/live-report/route.ts` — server route for the live sync
   (needs `ANTHROPIC_API_KEY`)
+- `app/api/espn-draft/route.ts` — live ESPN draft feed for the Draft Room
+  (see below)
 
 ## Deploying
 
@@ -54,6 +56,26 @@ nothing else to configure. Set `ANTHROPIC_API_KEY` in the project's
 environment variables if you want the Player Lab's live sync; without it
 everything else works and the sync button explains it is unconfigured.
 Every push to `main` redeploys.
+
+## ESPN live draft sync
+
+The Draft Room can mirror a real ESPN Fantasy draft. The server polls ESPN's
+v3 league endpoint (mDraftDetail / mSettings / mTeam / mRoster views) every
+2.5 seconds; the client polls the server. Configure with environment
+variables — the cookies stay server-side and are never sent to the browser:
+
+| Variable | Meaning |
+|---|---|
+| `ESPN_LEAGUE_ID` | League id (defaults to `872177723`) |
+| `ESPN_SEASON` | Season year (defaults to `2026`) |
+| `ESPN_SWID` | `SWID` cookie — private leagues only, keep the braces |
+| `ESPN_S2` | `espn_s2` cookie — private leagues only |
+| `ESPN_MOCK` | `1` serves a growing mock draft for local development |
+
+Find the two cookies while logged into fantasy.espn.com (browser dev tools →
+Application → Cookies). In the app: Draft Room → Connect to ESPN → choose
+which team is yours. Picks stream in as they happen; recommendations,
+survival probabilities, and the rest-of-draft plan recompute on each one.
 
 ## Development
 

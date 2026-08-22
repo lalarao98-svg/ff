@@ -86,12 +86,13 @@ def fetch_season(season):
     return fetch_csv_gz(f"{RELEASE}/stats_player_reg_{season}.csv.gz")
 
 
-def fetch_birth_dates():
-    return {
-        r["gsis_id"]: r["birth_date"]
-        for r in fetch_csv_gz(PLAYERS_URL)
-        if r.get("gsis_id") and r.get("birth_date")
-    }
+def fetch_player_ids():
+    """gsis_id -> {birth_date, espn_id} from the nflverse players file."""
+    out = {}
+    for r in fetch_csv_gz(PLAYERS_URL):
+        if r.get("gsis_id"):
+            out[r["gsis_id"]] = {"birth_date": r.get("birth_date"), "espn_id": r.get("espn_id")}
+    return out
 
 
 def stat_line(row, pos):
@@ -158,16 +159,22 @@ def main():
     # Keep players who took the field in the latest completed season.
     out = [p for p in players.values() if str(latest) in p["sources"]]
 
-    # Age as of September 1 of the draft season (the what-if lab's age curves).
-    births = fetch_birth_dates()
+    # Ages (the what-if lab's curves) and ESPN player ids (live draft sync).
+    ids = fetch_player_ids()
     import datetime
     ref = datetime.date(latest + 1, 9, 1)
     for p in out:
-        bd = births.get(p["id"])
+        rec = ids.get(p["id"]) or {}
+        bd = rec.get("birth_date")
         if bd:
             try:
                 b = datetime.date.fromisoformat(bd)
                 p["age"] = ref.year - b.year - ((ref.month, ref.day) < (b.month, b.day))
+            except ValueError:
+                pass
+        if rec.get("espn_id"):
+            try:
+                p["espnId"] = int(float(rec["espn_id"]))
             except ValueError:
                 pass
 
