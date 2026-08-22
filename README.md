@@ -1,5 +1,7 @@
 # FieldEdge
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Flalarao98-svg%2Fff&env=ANTHROPIC_API_KEY&envDescription=Optional%3A%20powers%20the%20Player%20Lab%27s%20live%20injury%2Fweather%2Frole%20sync&project-name=fieldedge&repository-name=fieldedge)
+
 Fantasy football analytics on [nflverse-data](https://github.com/nflverse/nflverse-data),
 with the draft pipeline ported from
 [FantasyFootballAnalyticsR](https://github.com/dadrivr/FantasyFootballAnalyticsR)
@@ -19,10 +21,12 @@ around their anchor.
   floor/median/ceiling under each player's saved scenario.
 - **Draft Board** — backtested model projections (usage & recency-weighted
   per-game rates x availability-shrunk expected games, position age curves,
-  empirical injury-recovery comps), value over replacement, risk
-  (season-to-season spread widened for players returning from major
-  injuries), the risk-capped optimum roster, the points-vs-risk frontier,
-  and the model-validation table.
+  empirical injury-recovery comps) blended 50/50 with the FantasyPros
+  expert-consensus rank (via DynastyProcess) — the strongest variant in the
+  backtest; value over replacement; risk (season spread + expert
+  disagreement, widened for players returning from major injuries); the
+  risk-capped optimum roster; the points-vs-risk frontier; and the
+  model-validation table.
 
 ## Layout
 
@@ -42,6 +46,15 @@ around their anchor.
 - `app/api/live-report/route.ts` — server route for the live sync
   (needs `ANTHROPIC_API_KEY`)
 
+## Deploying
+
+Click the Vercel button above (or import the repo at vercel.com/new) — the
+app is a standard Next.js build with the dataset committed, so there is
+nothing else to configure. Set `ANTHROPIC_API_KEY` in the project's
+environment variables if you want the Player Lab's live sync; without it
+everything else works and the sync button explains it is unconfigured.
+Every push to `main` redeploys.
+
 ## Development
 
 ```bash
@@ -56,8 +69,8 @@ and everything else works normally.
 ## Refreshing the data
 
 ```bash
-npm run data                                # last 3 completed seasons
-python3 scripts/backtest.py                 # re-validate the model
+npm run data                                # refresh stats + market consensus
+python3 scripts/backtest.py                 # re-validate the model (pip install pyarrow)
 python3 scripts/build-dataset.py --seasons 2024 2025 2026
 ```
 

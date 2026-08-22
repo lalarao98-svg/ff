@@ -28,6 +28,7 @@ import urllib.request
 from collections import Counter, defaultdict
 
 BASE = "https://github.com/nflverse/nflverse-data/releases/download"
+DP = "https://raw.githubusercontent.com/dynastyprocess/data/master/files"
 CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache")
 
 OFFENSE_POS = {"QB", "RB", "WR", "TE"}
@@ -98,6 +99,103 @@ def injuries(season):
 def birth_dates():
     rows = fetch_csv(f"{BASE}/players/players.csv.gz", "players.csv")
     return {r["gsis_id"]: r["birth_date"] for r in rows if r.get("gsis_id") and r.get("birth_date")}
+
+
+def norm_name(name):
+    return "".join(c for c in (name or "").upper() if c.isalnum())
+
+
+def latest_ecr():
+    """Current FantasyPros redraft-overall consensus (via DynastyProcess):
+    normalized name -> {ecr, sd}. Scraped daily."""
+    rows = fetch_csv(f"{DP}/db_fpecr_latest.csv", "db_fpecr_latest.csv")
+    out = {}
+    for r in rows:
+        if r.get("ecr_type") != "ro":
+            continue
+        out[(norm_name(r.get("player")), r.get("pos"))] = {
+            "ecr": num(r.get("ecr")), "sd": num(r.get("sd")),
+        }
+    return out
+
+
+def historical_ecr(target_season):
+    """August redraft-overall consensus immediately before `target_season`,
+    from the DynastyProcess FantasyPros archive (parquet; needs pyarrow).
+    Returns normalized (name, pos) -> ecr, or None if unavailable."""
+    try:
+        import pyarrow.parquet as pq
+    except ImportError:
+        return None
+    os.makedirs(CACHE, exist_ok=True)
+    path = os.path.join(CACHE, "db_fpecr.parquet")
+    if not os.path.exists(path):
+        url = f"{DP}/db_fpecr.parquet"
+        for attempt in range(3):
+            print(f"fetching {url}")
+            try:
+                with urllib.request.urlopen(url) as resp, open(path + ".part", "wb") as f:
+                    while True:
+                        chunk = resp.read(1 << 20)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                os.replace(path + ".part", path)
+                break
+            except Exception as e:
+                print(f"  download failed ({e}), retrying" if attempt < 2 else f"  giving up: {e}")
+        else:
+            return None
+    t = pq.read_table(path, columns=["ecr_type", "scrape_date", "player", "pos", "ecr"])
+    d = t.to_pydict()
+    # last snapshot in August of the draft year
+    best_date = None
+    prefix = f"{target_season}-08"
+    for i in range(len(d["ecr_type"])):
+        if d["ecr_type"][i] == "ro":
+            date = str(d["scrape_date"][i])
+            if date.startswith(prefix) and (best_date is None or date > best_date):
+                best_date = date
+    if best_date is None:
+        return None
+    out = {}
+    for i in range(len(d["ecr_type"])):
+        if d["ecr_type"][i] == "ro" and str(d["scrape_date"][i]) == best_date:
+            out[(norm_name(d["player"][i]), d["pos"][i])] = num(d["ecr"][i])
+    return out
+
+
+def market_points(hist, target, recovery, ecr_by_key):
+    """Convert market ranks to points using our own projection curve:
+    the market's #r player at a position is credited with the points of our
+    #r-projected player there. Returns pid -> market-implied points."""
+    projs = defaultdict(list)  # pos -> sorted model projections
+    named = {}
+    for (pid, season), rec in hist.ps.items():
+        if season != target - 1:
+            continue
+        proj = hist.project(pid, target, 3, recovery)
+        if proj is not None:
+            projs[rec["pos"]].append(proj)
+            named[pid] = (norm_name(rec["name"]), rec["pos"], proj)
+    for pos in projs:
+        projs[pos].sort(reverse=True)
+    # market position-rank from overall ecr ordering
+    by_pos_rank = defaultdict(list)
+    for (name, pos), val in ecr_by_key.items():
+        ecr = val["ecr"] if isinstance(val, dict) else val
+        by_pos_rank[pos].append((ecr, name))
+    pos_rank = {}
+    for pos, lst in by_pos_rank.items():
+        for i, (_, name) in enumerate(sorted(lst)):
+            pos_rank[(name, pos)] = i
+    out = {}
+    for pid, (name, pos, _) in named.items():
+        r = pos_rank.get((name, pos))
+        curve = projs.get(pos)
+        if r is not None and curve:
+            out[pid] = curve[min(r, len(curve) - 1)]
+    return out
 
 
 def fantasy_points(row):

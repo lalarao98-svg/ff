@@ -21,13 +21,19 @@ export interface UniversePlayer {
   pos: Position;
   team: string;
   age: number;
-  /** Model projection for the draft season (usage/recency + age + injury comps). */
+  /** Headline projection: backtested model blended 50/50 with market consensus. */
   proj: number;
+  /** Pure model projection (before the market blend). */
+  modelProj: number;
   projPg: number;
   expGames: number;
   ageMult: number;
   injMult: number;
   injPart: string | null;
+  /** FantasyPros redraft-overall expert consensus rank (null if unranked). */
+  ecr: number | null;
+  /** Expert disagreement on that rank. */
+  ecrSd: number | null;
   /** Season fantasy-point totals acting as sources (real + deterministic spread). */
   src: number[];
   /** How many real seasons back this player's sources. */
@@ -89,6 +95,9 @@ interface ModelFields {
   ageMult: number;
   injMult: number;
   injPart?: string;
+  blend?: number;
+  ecr?: number;
+  ecrSd?: number;
 }
 
 function buildUniverse(): UniversePlayer[] {
@@ -110,12 +119,15 @@ function buildUniverse(): UniversePlayer[] {
       src,
       nSrc: real.length,
       robust,
-      proj: model?.proj ?? robust,
+      proj: model?.blend ?? model?.proj ?? robust,
+      modelProj: model?.proj ?? robust,
       projPg: model?.projPg ?? robust / GAMES,
       expGames: model?.expGames ?? GAMES,
       ageMult: model?.ageMult ?? 1,
       injMult: model?.injMult ?? 1,
       injPart: model?.injPart ?? null,
+      ecr: model?.ecr ?? null,
+      ecrSd: model?.ecrSd ?? null,
       mean: mean(src),
       sdPts: mad(src),
       posRank: 0,
@@ -135,14 +147,22 @@ function buildUniverse(): UniversePlayer[] {
       });
   });
 
-  // Risk.R: z-score the source spread within position, rescale to mean 5 / sd 2.
+  // Risk.R's two signals, z-scored within position then averaged: how much a
+  // player's seasons disagree with each other, and how much the experts
+  // disagree about him. Rescaled below to mean 5 / sd 2.
   POS_LIST.forEach((pos) => {
     const group = players.filter((p) => p.pos === pos);
     if (group.length < 2) return;
-    const m = mean(group.map((p) => p.sdPts));
-    const s = sd(group.map((p) => p.sdPts)) || 1;
+    const mPts = mean(group.map((p) => p.sdPts));
+    const sPts = sd(group.map((p) => p.sdPts)) || 1;
+    const withEcr = group.filter((p) => p.ecrSd != null);
+    const mEcr = withEcr.length > 2 ? mean(withEcr.map((p) => p.ecrSd!)) : 0;
+    const sEcr = withEcr.length > 2 ? sd(withEcr.map((p) => p.ecrSd!)) || 1 : 1;
     group.forEach((p) => {
-      p.risk = (p.sdPts - m) / s;
+      const zPts = (p.sdPts - mPts) / sPts;
+      p.risk = p.ecrSd != null && withEcr.length > 2
+        ? (zPts + (p.ecrSd - mEcr) / sEcr) / 2
+        : zPts;
     });
   });
   const rawById = new Map(DATASET.players.map((r) => [r.id, r as { wsd?: number }]));

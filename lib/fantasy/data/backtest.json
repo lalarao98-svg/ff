@@ -9,7 +9,8 @@
   "0": "Robust baseline (last-3 season totals)",
   "1": "+ usage & recency (per-game rate x expected games)",
   "2": "+ age curves",
-  "3": "+ injury recovery"
+  "3": "+ injury recovery",
+  "4": "+ market consensus (50/50 blend with FantasyPros ECR)"
  },
  "byVariant": {
   "0": {
@@ -146,6 +147,40 @@
     "spearman": 0.7361,
     "mae": 38.82,
     "maeTop": 56.79
+   }
+  },
+  "4": {
+   "label": "+ market consensus (50/50 blend with FantasyPros ECR)",
+   "positions": {
+    "QB": {
+     "spearman": 0.7611,
+     "mae": 58.58,
+     "maeTop": 73.61,
+     "n": 275
+    },
+    "RB": {
+     "spearman": 0.7665,
+     "mae": 35.53,
+     "maeTop": 56.35,
+     "n": 508
+    },
+    "TE": {
+     "spearman": 0.7552,
+     "mae": 20.35,
+     "maeTop": 29.92,
+     "n": 417
+    },
+    "WR": {
+     "spearman": 0.7887,
+     "mae": 30.55,
+     "maeTop": 47.08,
+     "n": 744
+    }
+   },
+   "overall": {
+    "spearman": 0.7679,
+    "mae": 36.25,
+    "maeTop": 51.74
    }
   }
  }

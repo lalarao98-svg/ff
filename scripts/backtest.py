@@ -22,7 +22,7 @@ import json
 import os
 from collections import defaultdict
 
-from model import History, learn_recovery, OFFENSE_POS
+from model import History, learn_recovery, historical_ecr, market_points, OFFENSE_POS
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib", "fantasy", "data", "backtest.json")
 
@@ -31,6 +31,7 @@ VARIANTS = {
     1: "+ usage & recency (per-game rate x expected games)",
     2: "+ age curves",
     3: "+ injury recovery",
+    4: "+ market consensus (50/50 blend with FantasyPros ECR)",
 }
 TOP_N = {"QB": 24, "RB": 36, "WR": 36, "TE": 24}
 
@@ -71,14 +72,20 @@ def main():
 
     for target in targets:
         recovery, _ = learn_recovery(hist, target - 1)
+        ecr = historical_ecr(target)
+        market = market_points(hist, target, recovery, ecr) if ecr else {}
         # eligible: had evidence AND actually played in the target season
         actual = {pid: rec for (pid, s), rec in hist.ps.items() if s == target}
         for variant in VARIANTS:
+            if variant == 4 and not market:
+                continue
             rows = defaultdict(list)  # pos -> (proj, actual_pts)
             for pid, rec in actual.items():
-                proj = hist.project(pid, target, variant, recovery)
+                proj = hist.project(pid, target, min(variant, 3), recovery)
                 if proj is None:
                     continue
+                if variant == 4 and pid in market:
+                    proj = 0.5 * proj + 0.5 * market[pid]
                 rows[rec["pos"]].append((proj, rec["pts"]))
             for pos, pairs in rows.items():
                 if len(pairs) < 10:

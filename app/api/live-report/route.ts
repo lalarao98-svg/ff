@@ -23,11 +23,16 @@ export async function POST(req: Request) {
 
   const prompt =
     `Search the web for the latest information relevant to NFL player ${name} (${pos}, ${team}) ` +
-    `for their upcoming game: current injury report status, expected stadium weather (wind mph, rain/snow), ` +
-    `whether the game is in a dome, opponent defensive rank vs his position (1 = toughest of 32), ` +
-    `and the Vegas implied team total. Respond with ONLY minified JSON, no markdown fences, exactly this shape: ` +
+    `for their upcoming game and current-season role: current injury report status, expected stadium weather ` +
+    `(wind mph, rain/snow), whether the game is in a dome, opponent defensive rank vs his position ` +
+    `(1 = toughest of 32), the Vegas implied team total, and his current role vs last season -- team change, ` +
+    `depth-chart position, new competition for touches, coordinator change. Express the role outlook as a ` +
+    `multiplier on last season's per-game usage: 1.0 unchanged, below 1 for a reduced role (e.g. 0.8 = lost ` +
+    `work to a new starter), above 1 for an expanded role (e.g. 1.15 = clear lead job now). Stay in 0.5-1.3. ` +
+    `Respond with ONLY minified JSON, no markdown fences, exactly this shape: ` +
     `{"injuryStatus":"healthy"|"probable"|"questionable"|"doubtful"|"out","windMph":number,` +
     `"precip":"none"|"rain"|"snow","dome":boolean,"oppDefRank":number,"teamTotal":number,` +
+    `"roleFactor":number,"roleNote":"short phrase on the role change or ''unchanged''",` +
     `"note":"one short sentence summary"}`;
 
   try {

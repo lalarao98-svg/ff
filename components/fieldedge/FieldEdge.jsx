@@ -35,6 +35,7 @@ const INJURY = {
 const DEFAULT_SETTINGS = {
   injury: "healthy", ageShift: 0, windMph: 5, precip: "none", dome: false,
   oppDefRank: 16, teamTotal: 23, script: "neutral", snapDelta: 0,
+  roleMult: 1, roleNote: null,
 };
 
 const T = {
@@ -166,8 +167,10 @@ function computeFactors(player, s) {
   if (s.script === "favored") scriptMult = player.pos === "RB" ? 1.07 : 0.97;
   if (s.script === "trailing") scriptMult = player.pos === "RB" ? 0.94 : 1.07;
   const snapMult = 1 + s.snapDelta / 100;
+  const roleMult = s.roleMult ?? 1;
 
   const factors = [
+    { key: "role",   label: s.roleNote ? "2026 role: " + s.roleNote : "2026 role (unchanged)", mult: roleMult },
     { key: "age",    label: "Age curve (" + whatIfAge + " y/o)", mult: ageMult },
     { key: "inj",    label: "Injury effectiveness",              mult: inj.eff || 1 },
     { key: "wind",   label: s.dome ? "Wind (dome)" : "Wind " + s.windMph + " mph", mult: windMult },
@@ -429,7 +432,8 @@ export default function FieldEdge() {
       b = b.filter(r => r.name.toLowerCase().includes(q) || r.team.toLowerCase() === q);
     }
     return [...b].sort((a, x) => {
-      const av = a[sortKey] ?? -1e9, xv = x[sortKey] ?? -1e9;
+      const nullVal = sortAsc ? 1e9 : -1e9;
+      const av = a[sortKey] ?? nullVal, xv = x[sortKey] ?? nullVal;
       return sortAsc ? av - xv : xv - av;
     });
   }, [board, posFilter, query, sortKey, sortAsc]);
@@ -447,6 +451,8 @@ export default function FieldEdge() {
         dome: !!r.dome,
         oppDefRank: Math.max(1, Math.min(32, Math.round(r.oppDefRank ?? 16))),
         teamTotal: Math.max(14, Math.min(34, Math.round(r.teamTotal ?? 23))),
+        roleMult: Math.max(0.5, Math.min(1.3, Number(r.roleFactor) || 1)),
+        roleNote: r.roleNote && r.roleNote !== "unchanged" ? String(r.roleNote).slice(0, 60) : null,
       });
       setSyncNote(r.note || "Live factors applied.");
     } catch (e) {
@@ -767,14 +773,15 @@ export default function FieldEdge() {
                   Value over replacement — {teams} teams
                 </div>
                 <p className="body-serif" style={{ margin: "0 0 16px" }}>
-                  {UNIVERSE.length.toLocaleString()} players from nflverse-data. {N_MULTI} carry two or more real
-                  seasons ({SEASONS_USED.join(", ")}); {N_SINGLE} carry a single real season spread
-                  deterministically. Proj is the backtested model (usage & recency, age curves,
-                  empirical injury comps — validated below); Robust is the plain three-season baseline. Risk is the
-                  season-to-season spread standardized within position, widened for players returning from major
-                  injuries; VOR is model-projected points above the
-                  replacement starter at rank QB{repl.QB} / RB{repl.RB} / WR{repl.WR} / TE{repl.TE},
-                  measured against the actual players holding those ranks. Click a column to sort.
+                  {`${UNIVERSE.length.toLocaleString()} players from nflverse-data. ${N_MULTI} carry two or more
+                  real seasons (${SEASONS_USED.join(", ")}); ${N_SINGLE} carry a single real season spread
+                  deterministically. Proj is the backtested model (usage & recency, age curves, empirical
+                  injury comps) blended 50/50 with the FantasyPros expert consensus where ranked — the
+                  strongest variant below. ECR is the market's overall rank. Risk blends how much a player's
+                  seasons disagree with how much the experts disagree — standardized within position and
+                  widened for players returning from major injuries. VOR is projected points above the
+                  replacement starter at rank QB${repl.QB} / RB${repl.RB} / WR${repl.WR} / TE${repl.TE},
+                  measured against the actual players holding those ranks. Click a column to sort.`}
                 </p>
 
                 <div style={{ marginBottom: 10 }}>
@@ -795,8 +802,8 @@ export default function FieldEdge() {
                         {th("Pos", null, "left")}
                         {th("Team", null, "left")}
                         {th("Src", "nSrc")}
+                        {th("ECR", "ecr")}
                         {th("Proj", "proj")}
-                        {th("Robust", "robust")}
                         {th("SD", "sdPts")}
                         {th("Risk", "risk")}
                         {th("VOR", "vor")}
@@ -809,11 +816,11 @@ export default function FieldEdge() {
                           <td style={{ ...cell, textAlign: "left", color: T.warmGray }}>{r.pos}</td>
                           <td style={{ ...cell, textAlign: "left", color: T.warmGray }}>{r.team}</td>
                           <td style={{ ...cell, color: r.nSrc === 0 ? T.flag : T.black }}>{r.nSrc === 0 ? "—" : r.nSrc}</td>
+                          <td style={{ ...cell, color: T.warmGray }}>{r.ecr != null ? r.ecr.toFixed(0) : "—"}</td>
                           <td style={{ ...cell, fontWeight: 500 }}>
                             {r.proj.toFixed(1)}
                             {r.injPart ? <span title={"returning from " + r.injPart} style={{ color: T.flag }}> †</span> : null}
                           </td>
-                          <td style={cell}>{r.robust.toFixed(1)}</td>
                           <td style={cell}>{r.sdPts.toFixed(1)}</td>
                           <td style={{ ...cell, color: r.risk >= 6 ? T.flag : T.black }}>{r.risk.toFixed(1)}</td>
                           <td style={cell}><SignedNum v={r.vor} /></td>
@@ -914,16 +921,17 @@ export default function FieldEdge() {
                       <tbody>
                         {Object.entries(BACKTEST.byVariant).map(([v, b]) => (
                           <tr key={v}>
-                            <td style={{ fontSize: 11.5, padding: "6px 4px", borderBottom: "1px solid " + T.hair, fontWeight: v === "3" ? 700 : 400 }}>{b.label}</td>
-                            <td style={{ fontSize: 11.5, textAlign: "right", padding: "6px 4px", borderBottom: "1px solid " + T.hair, fontWeight: v === "3" ? 700 : 400 }}>{b.overall.spearman.toFixed(3)}</td>
-                            <td style={{ fontSize: 11.5, textAlign: "right", padding: "6px 4px", borderBottom: "1px solid " + T.hair, fontWeight: v === "3" ? 700 : 400 }}>{b.overall.maeTop.toFixed(1)}</td>
+                            <td style={{ fontSize: 11.5, padding: "6px 4px", borderBottom: "1px solid " + T.hair, fontWeight: v === "4" ? 700 : 400 }}>{b.label}</td>
+                            <td style={{ fontSize: 11.5, textAlign: "right", padding: "6px 4px", borderBottom: "1px solid " + T.hair, fontWeight: v === "4" ? 700 : 400 }}>{b.overall.spearman.toFixed(3)}</td>
+                            <td style={{ fontSize: 11.5, textAlign: "right", padding: "6px 4px", borderBottom: "1px solid " + T.hair, fontWeight: v === "4" ? 700 : 400 }}>{b.overall.maeTop.toFixed(1)}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                     <p className="data" style={{ fontSize: 9, color: T.warmGray, marginTop: 6, lineHeight: 1.5 }}>
-                      Usage/recency and age carry the accuracy gain; injury comps barely move the mean and are
-                      applied mostly as wider risk. The shipped board runs the full bolded model.
+                      Usage/recency and age improve on the raw baseline; injury comps barely move the mean and
+                      are applied mostly as wider risk; blending the market consensus is the largest single gain.
+                      The shipped board runs the full bolded model.
                     </p>
                   </div>
                 </div>

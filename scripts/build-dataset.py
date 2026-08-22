@@ -21,7 +21,7 @@ import sys
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from model import History, learn_recovery, fantasy_points
+from model import History, learn_recovery, fantasy_points, latest_ecr, market_points, norm_name
 
 RELEASE = "https://github.com/nflverse/nflverse-data/releases/download/stats_player"
 PLAYERS_URL = "https://github.com/nflverse/nflverse-data/releases/download/players/players.csv.gz"
@@ -176,6 +176,8 @@ def main():
     target = latest + 1
     hist = History(latest - 6, latest)
     recovery, _ = learn_recovery(hist, latest)
+    ecr = latest_ecr()
+    market = market_points(hist, target, recovery, ecr)
     for p in out:
         if p["pos"] == "K":
             continue
@@ -190,6 +192,15 @@ def main():
             }
             if comp["injPart"] and comp["injMult"] != 1.0:
                 p["model"]["injPart"] = comp["injPart"]
+            # Market consensus: FantasyPros redraft-overall ECR (via
+            # DynastyProcess, scraped daily). The shipped projection is the
+            # backtested 50/50 blend; ECR sd feeds the risk score.
+            mkt = ecr.get((norm_name(p["player"]), p["pos"]))
+            if mkt and p["id"] in market:
+                blend = 0.5 * comp["proj"] + 0.5 * market[p["id"]]
+                p["model"]["blend"] = round(blend, 1)
+                p["model"]["ecr"] = mkt["ecr"]
+                p["model"]["ecrSd"] = mkt["sd"]
 
     # Observed weekly scoring volatility from the last two seasons of
     # per-week stats (the what-if lab's simulation width).
