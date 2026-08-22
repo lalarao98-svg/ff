@@ -17,7 +17,11 @@ import io
 import json
 import math
 import os
+import sys
 import urllib.request
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from model import History, learn_recovery, fantasy_points
 
 RELEASE = "https://github.com/nflverse/nflverse-data/releases/download/stats_player"
 PLAYERS_URL = "https://github.com/nflverse/nflverse-data/releases/download/players/players.csv.gz"
@@ -167,6 +171,42 @@ def main():
             except ValueError:
                 pass
 
+    # Predictive model layer: usage/recency + age curves + empirical injury
+    # recovery (see scripts/model.py; validated in scripts/backtest.py).
+    target = latest + 1
+    hist = History(latest - 6, latest)
+    recovery, _ = learn_recovery(hist, latest)
+    for p in out:
+        if p["pos"] == "K":
+            continue
+        comp = hist.components(p["id"], target, recovery)
+        if comp:
+            p["model"] = {
+                "proj": round(comp["proj"], 1),
+                "projPg": round(comp["projPg"], 2),
+                "expGames": round(comp["expGames"], 1),
+                "ageMult": round(comp["ageMult"], 3),
+                "injMult": round(comp["injMult"], 3),
+            }
+            if comp["injPart"] and comp["injMult"] != 1.0:
+                p["model"]["injPart"] = comp["injPart"]
+
+    # Observed weekly scoring volatility from the last two seasons of
+    # per-week stats (the what-if lab's simulation width).
+    from model import weekly_stats
+    weekly_pts = {}
+    for season in seasons[-2:]:
+        for row in weekly_stats(season):
+            pid = row.get("player_id")
+            if pid:
+                weekly_pts.setdefault(pid, []).append(fantasy_points(row))
+    for p in out:
+        pts = weekly_pts.get(p["id"], [])
+        if len(pts) >= 8:
+            m = sum(pts) / len(pts)
+            sd = (sum((x - m) ** 2 for x in pts) / (len(pts) - 1)) ** 0.5
+            p["wsd"] = round(sd, 2)
+
     # Synthetic auction costs: distribute the league's discretionary dollars
     # in proportion to value over replacement of the robust multi-season
     # average (the same Hodges-Lehmann baseline the engine ranks by, so a
@@ -178,8 +218,11 @@ def main():
         return walsh[mid] if n % 2 else (walsh[mid - 1] + walsh[mid]) / 2
 
     for p in out:
-        season_pts = [points(st, p["pos"]) for st in p["sources"].values()]
-        p["_pts"] = pseudo_median(season_pts)
+        if p.get("model"):
+            p["_pts"] = p["model"]["proj"]
+        else:
+            season_pts = [points(st, p["pos"]) for st in p["sources"].values()]
+            p["_pts"] = pseudo_median(season_pts)
     surplus = {}
     for pos, rep_rank in REPLACEMENT_RANK.items():
         group = sorted((p for p in out if p["pos"] == pos), key=lambda p: -p["_pts"])

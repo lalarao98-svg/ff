@@ -1,0 +1,152 @@
+{
+ "targets": [
+  2022,
+  2023,
+  2024,
+  2025
+ ],
+ "variants": {
+  "0": "Robust baseline (last-3 season totals)",
+  "1": "+ usage & recency (per-game rate x expected games)",
+  "2": "+ age curves",
+  "3": "+ injury recovery"
+ },
+ "byVariant": {
+  "0": {
+   "label": "Robust baseline (last-3 season totals)",
+   "positions": {
+    "QB": {
+     "spearman": 0.7069,
+     "mae": 60.54,
+     "maeTop": 85.71,
+     "n": 275
+    },
+    "RB": {
+     "spearman": 0.7075,
+     "mae": 40.28,
+     "maeTop": 66.85,
+     "n": 508
+    },
+    "TE": {
+     "spearman": 0.7319,
+     "mae": 21.05,
+     "maeTop": 36.4,
+     "n": 417
+    },
+    "WR": {
+     "spearman": 0.7451,
+     "mae": 33.89,
+     "maeTop": 52.27,
+     "n": 744
+    }
+   },
+   "overall": {
+    "spearman": 0.7228,
+    "mae": 38.94,
+    "maeTop": 60.31
+   }
+  },
+  "1": {
+   "label": "+ usage & recency (per-game rate x expected games)",
+   "positions": {
+    "QB": {
+     "spearman": 0.719,
+     "mae": 63.02,
+     "maeTop": 81.21,
+     "n": 275
+    },
+    "RB": {
+     "spearman": 0.7229,
+     "mae": 39.76,
+     "maeTop": 62.38,
+     "n": 508
+    },
+    "TE": {
+     "spearman": 0.7372,
+     "mae": 21.36,
+     "maeTop": 33.6,
+     "n": 417
+    },
+    "WR": {
+     "spearman": 0.7565,
+     "mae": 33.85,
+     "maeTop": 49.83,
+     "n": 744
+    }
+   },
+   "overall": {
+    "spearman": 0.7339,
+    "mae": 39.5,
+    "maeTop": 56.75
+   }
+  },
+  "2": {
+   "label": "+ age curves",
+   "positions": {
+    "QB": {
+     "spearman": 0.7222,
+     "mae": 63.28,
+     "maeTop": 82.78,
+     "n": 275
+    },
+    "RB": {
+     "spearman": 0.7277,
+     "mae": 38.41,
+     "maeTop": 60.81,
+     "n": 508
+    },
+    "TE": {
+     "spearman": 0.7374,
+     "mae": 21.27,
+     "maeTop": 33.43,
+     "n": 417
+    },
+    "WR": {
+     "spearman": 0.7604,
+     "mae": 33.41,
+     "maeTop": 48.12,
+     "n": 744
+    }
+   },
+   "overall": {
+    "spearman": 0.7369,
+    "mae": 39.09,
+    "maeTop": 56.29
+   }
+  },
+  "3": {
+   "label": "+ injury recovery",
+   "positions": {
+    "QB": {
+     "spearman": 0.7214,
+     "mae": 62.83,
+     "maeTop": 83.4,
+     "n": 275
+    },
+    "RB": {
+     "spearman": 0.7263,
+     "mae": 38.26,
+     "maeTop": 61.3,
+     "n": 508
+    },
+    "TE": {
+     "spearman": 0.7377,
+     "mae": 21.28,
+     "maeTop": 33.06,
+     "n": 417
+    },
+    "WR": {
+     "spearman": 0.7592,
+     "mae": 32.91,
+     "maeTop": 49.4,
+     "n": 744
+    }
+   },
+   "overall": {
+    "spearman": 0.7361,
+    "mae": 38.82,
+    "maeTop": 56.79
+   }
+  }
+ }
+}

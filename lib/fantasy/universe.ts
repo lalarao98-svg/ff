@@ -21,6 +21,13 @@ export interface UniversePlayer {
   pos: Position;
   team: string;
   age: number;
+  /** Model projection for the draft season (usage/recency + age + injury comps). */
+  proj: number;
+  projPg: number;
+  expGames: number;
+  ageMult: number;
+  injMult: number;
+  injPart: string | null;
   /** Season fantasy-point totals acting as sources (real + deterministic spread). */
   src: number[];
   /** How many real seasons back this player's sources. */
@@ -75,6 +82,15 @@ function synthSources(anchor: number, id: string, n: number, vol: number): numbe
   return out;
 }
 
+interface ModelFields {
+  proj: number;
+  projPg: number;
+  expGames: number;
+  ageMult: number;
+  injMult: number;
+  injPart?: string;
+}
+
 function buildUniverse(): UniversePlayer[] {
   const players: UniversePlayer[] = DATASET.players.map((raw) => {
     const real = Object.keys(raw.sources)
@@ -83,6 +99,8 @@ function buildUniverse(): UniversePlayer[] {
       .filter((pts) => pts > 0);
     const anchor = real.length ? real : [1];
     const src = anchor.length >= 2 ? anchor : synthSources(anchor[0], raw.id, 5, 0.09);
+    const robust = pseudoMedian(src);
+    const model = (raw as { model?: ModelFields }).model;
     return {
       id: raw.id,
       name: raw.player,
@@ -91,7 +109,13 @@ function buildUniverse(): UniversePlayer[] {
       age: (raw as { age?: number }).age ?? 26,
       src,
       nSrc: real.length,
-      robust: pseudoMedian(src),
+      robust,
+      proj: model?.proj ?? robust,
+      projPg: model?.projPg ?? robust / GAMES,
+      expGames: model?.expGames ?? GAMES,
+      ageMult: model?.ageMult ?? 1,
+      injMult: model?.injMult ?? 1,
+      injPart: model?.injPart ?? null,
       mean: mean(src),
       sdPts: mad(src),
       posRank: 0,
@@ -105,7 +129,7 @@ function buildUniverse(): UniversePlayer[] {
   POS_LIST.forEach((pos) => {
     players
       .filter((p) => p.pos === pos)
-      .sort((a, b) => b.robust - a.robust)
+      .sort((a, b) => b.proj - a.proj)
       .forEach((p, i) => {
         p.posRank = i + 1;
       });
@@ -121,13 +145,17 @@ function buildUniverse(): UniversePlayer[] {
       p.risk = (p.sdPts - m) / s;
     });
   });
+  const rawById = new Map(DATASET.players.map((r) => [r.id, r as { wsd?: number }]));
   const zs = players.map((p) => p.risk);
   const zm = mean(zs);
   const zsd = sd(zs) || 1;
   players.forEach((p) => {
     p.risk = (p.risk * 2) / zsd + (5 - zm);
-    p.base = p.robust / GAMES;
-    p.wsd = weeklySd(p.pos, p.base);
+    // Returning from a major injury: the comp multiplier moves the mean a
+    // little; the real information is uncertainty, so widen risk too.
+    if (p.injMult < 1) p.risk += (1 - p.injMult) * 5;
+    p.base = p.projPg;
+    p.wsd = rawById.get(p.id)?.wsd ?? weeklySd(p.pos, p.base);
   });
 
   return players;
@@ -140,7 +168,7 @@ export const BY_LABEL = new Map(UNIVERSE.map((p) => [label(p), p.id]));
 
 export const POS_SORTED: Record<string, UniversePlayer[]> = {};
 POS_LIST.forEach((pos) => {
-  POS_SORTED[pos] = UNIVERSE.filter((p) => p.pos === pos).sort((a, b) => b.robust - a.robust);
+  POS_SORTED[pos] = UNIVERSE.filter((p) => p.pos === pos).sort((a, b) => b.proj - a.proj);
 });
 
 export const N_MULTI = UNIVERSE.filter((p) => p.nSrc >= 2).length;

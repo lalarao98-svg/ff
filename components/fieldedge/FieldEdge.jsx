@@ -7,6 +7,7 @@ import {
   UNIVERSE, BY_ID, BY_LABEL, POS_SORTED, N_MULTI, N_SINGLE, DEFAULT_A, DEFAULT_B,
   CORE, POS_LIST, DATA_SEASON, SEASONS_USED, label, mulberry32, strHash,
 } from "@/lib/fantasy/universe";
+import BACKTEST from "@/lib/fantasy/data/backtest.json";
 
 /* ============================================================
    FIELD EDGE - Fantasy Football Analytics
@@ -69,19 +70,19 @@ function replacementRanks(teams) {
   };
 }
 
-/* VOR.R: baseline = mean of robust points at replacement rank -1..+1, empirical */
+/* VOR.R: baseline = mean of model-projected points at replacement rank -1..+1, empirical */
 function computeVOR(teams) {
   const repl = replacementRanks(teams);
   const baselines = {};
   CORE.forEach(pos => {
     const arr = POS_SORTED[pos];
     const rr = Math.min(repl[pos], arr.length - 2);
-    baselines[pos] = (arr[rr - 2].robust + arr[rr - 1].robust + arr[rr].robust) / 3;
+    baselines[pos] = (arr[rr - 2].proj + arr[rr - 1].proj + arr[rr].proj) / 3;
   });
   const rows = UNIVERSE.map(p => ({
     ...p,
     baseline: CORE.includes(p.pos) ? baselines[p.pos] : null,
-    vor: CORE.includes(p.pos) ? p.robust - baselines[p.pos] : null,
+    vor: CORE.includes(p.pos) ? p.proj - baselines[p.pos] : null,
   }));
   rows.sort((a, b) => (b.vor ?? -1e9) - (a.vor ?? -1e9));
   return { rows, repl };
@@ -98,10 +99,10 @@ function optimizeRoster(riskCap) {
   const used = new Set([...qb, ...rb, ...wr, ...te].map(r => r.id));
   const flex = ["RB", "WR", "TE"].flatMap(pos => POS_SORTED[pos])
     .filter(r => r.risk <= riskCap && !used.has(r.id))
-    .sort((a, b) => b.robust - a.robust)[0];
+    .sort((a, b) => b.proj - a.proj)[0];
   if (!flex) return null;
   const roster = [...qb, ...rb, ...wr, ...te, flex];
-  return { roster, total: roster.reduce((a, r) => a + r.robust, 0) };
+  return { roster, total: roster.reduce((a, r) => a + r.proj, 0) };
 }
 
 function riskFrontier() {
@@ -622,7 +623,9 @@ export default function FieldEdge() {
                 <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 4 }}>
                   <div className="display" style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.05 }}>{playerA.name}</div>
                   <div className="data" style={{ fontSize: 12, color: T.warmGray }}>
-                    {playerA.pos} · {playerA.team} · {playerA.base.toFixed(1)} pts/gm from {playerA.nSrc >= 2 ? playerA.nSrc + " real seasons" : "a single-season anchor"}
+                    {playerA.pos} · {playerA.team} · {playerA.base.toFixed(1)} pts/gm model projection
+                    ({playerA.expGames.toFixed(0)} expected games{playerA.nSrc >= 2 ? ", " + playerA.nSrc + " real seasons" : ", single-season anchor"})
+                    {playerA.injPart ? <span style={{ color: T.flag }}>{" · returning from " + playerA.injPart + " — comps at " + playerA.injMult.toFixed(2) + "x"}</span> : null}
                   </div>
                 </div>
 
@@ -766,8 +769,10 @@ export default function FieldEdge() {
                 <p className="body-serif" style={{ margin: "0 0 16px" }}>
                   {UNIVERSE.length.toLocaleString()} players from nflverse-data. {N_MULTI} carry two or more real
                   seasons ({SEASONS_USED.join(", ")}); {N_SINGLE} carry a single real season spread
-                  deterministically. Seasons combine by Hodges-Lehmann robust average; risk is the
-                  season-to-season spread standardized within position; VOR is season points above the
+                  deterministically. Proj is the backtested model (usage & recency, age curves,
+                  empirical injury comps — validated below); Robust is the plain three-season baseline. Risk is the
+                  season-to-season spread standardized within position, widened for players returning from major
+                  injuries; VOR is model-projected points above the
                   replacement starter at rank QB{repl.QB} / RB{repl.RB} / WR{repl.WR} / TE{repl.TE},
                   measured against the actual players holding those ranks. Click a column to sort.
                 </p>
@@ -790,7 +795,7 @@ export default function FieldEdge() {
                         {th("Pos", null, "left")}
                         {th("Team", null, "left")}
                         {th("Src", "nSrc")}
-                        {th("Mean", "mean")}
+                        {th("Proj", "proj")}
                         {th("Robust", "robust")}
                         {th("SD", "sdPts")}
                         {th("Risk", "risk")}
@@ -804,8 +809,11 @@ export default function FieldEdge() {
                           <td style={{ ...cell, textAlign: "left", color: T.warmGray }}>{r.pos}</td>
                           <td style={{ ...cell, textAlign: "left", color: T.warmGray }}>{r.team}</td>
                           <td style={{ ...cell, color: r.nSrc === 0 ? T.flag : T.black }}>{r.nSrc === 0 ? "—" : r.nSrc}</td>
-                          <td style={cell}>{r.mean.toFixed(1)}</td>
-                          <td style={{ ...cell, fontWeight: 500 }}>{r.robust.toFixed(1)}</td>
+                          <td style={{ ...cell, fontWeight: 500 }}>
+                            {r.proj.toFixed(1)}
+                            {r.injPart ? <span title={"returning from " + r.injPart} style={{ color: T.flag }}> †</span> : null}
+                          </td>
+                          <td style={cell}>{r.robust.toFixed(1)}</td>
                           <td style={cell}>{r.sdPts.toFixed(1)}</td>
                           <td style={{ ...cell, color: r.risk >= 6 ? T.flag : T.black }}>{r.risk.toFixed(1)}</td>
                           <td style={cell}><SignedNum v={r.vor} /></td>
@@ -851,7 +859,7 @@ export default function FieldEdge() {
                     </LineChart>
                   </ResponsiveContainer>
                   <div className="data" style={{ fontSize: 9, color: T.warmGray, marginTop: 2 }}>
-                    Blue line: total robust-projected points of the optimal lineup. Red marker: current cap.
+                    Blue line: total model-projected points of the optimal lineup. Red marker: current cap.
                   </div>
 
                   <div style={{ marginTop: 20 }}>
@@ -865,7 +873,7 @@ export default function FieldEdge() {
                                 {i === 0 ? "QB" : i <= 2 ? "RB" : i <= 4 ? "WR" : i === 5 ? "TE" : "FLEX"}
                               </td>
                               <td style={{ fontSize: 12, fontWeight: 500, padding: "6px 4px", borderBottom: "1px solid " + T.hair }}>{r.name}</td>
-                              <td style={{ fontSize: 12, textAlign: "right", padding: "6px 4px", borderBottom: "1px solid " + T.hair }}>{r.robust.toFixed(1)}</td>
+                              <td style={{ fontSize: 12, textAlign: "right", padding: "6px 4px", borderBottom: "1px solid " + T.hair }}>{r.proj.toFixed(1)}</td>
                               <td style={{ fontSize: 12, textAlign: "right", padding: "6px 4px", borderBottom: "1px solid " + T.hair, color: r.risk >= 6 ? T.flag : T.warmGray }}>{r.risk.toFixed(1)}</td>
                             </tr>
                           ))}
@@ -883,6 +891,41 @@ export default function FieldEdge() {
                       </div>
                     )}
                   </div>
+
+                  <div style={{ marginTop: 40 }}>
+                    <SectionBar num="07" title="Model Validation" />
+                    <div className="display" style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>
+                      Backtested on {BACKTEST.targets.length} held-out seasons
+                    </div>
+                    <p className="body-serif" style={{ margin: "0 0 12px" }}>
+                      {`Each modeling layer predicted seasons ${BACKTEST.targets.join(", ")} using only earlier
+                      data, then was scored against what actually happened. Rank r is the Spearman correlation
+                      between projected and actual season points; MAE-36 is the mean error among the top
+                      draft-relevant players at each position.`}
+                    </p>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }} className="data">
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: "left", fontSize: 11, fontWeight: 500, borderBottom: "1px solid " + T.black, padding: "5px 4px" }}>Model layer</th>
+                          <th style={{ textAlign: "right", fontSize: 11, fontWeight: 500, borderBottom: "1px solid " + T.black, padding: "5px 4px" }}>Rank r</th>
+                          <th style={{ textAlign: "right", fontSize: 11, fontWeight: 500, borderBottom: "1px solid " + T.black, padding: "5px 4px" }}>MAE-36</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(BACKTEST.byVariant).map(([v, b]) => (
+                          <tr key={v}>
+                            <td style={{ fontSize: 11.5, padding: "6px 4px", borderBottom: "1px solid " + T.hair, fontWeight: v === "3" ? 700 : 400 }}>{b.label}</td>
+                            <td style={{ fontSize: 11.5, textAlign: "right", padding: "6px 4px", borderBottom: "1px solid " + T.hair, fontWeight: v === "3" ? 700 : 400 }}>{b.overall.spearman.toFixed(3)}</td>
+                            <td style={{ fontSize: 11.5, textAlign: "right", padding: "6px 4px", borderBottom: "1px solid " + T.hair, fontWeight: v === "3" ? 700 : 400 }}>{b.overall.maeTop.toFixed(1)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="data" style={{ fontSize: 9, color: T.warmGray, marginTop: 6, lineHeight: 1.5 }}>
+                      Usage/recency and age carry the accuracy gain; injury comps barely move the mean and are
+                      applied mostly as wider risk. The shipped board runs the full bolded model.
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
@@ -893,8 +936,11 @@ export default function FieldEdge() {
                 {`Data. Universe of ${UNIVERSE.length.toLocaleString()} players built from nflverse-data season stats
                 (${SEASONS_USED.join(", ")}, 17-game seasons): each real season is one projection source.
                 ${N_MULTI} players carry 2+ real seasons; ${N_SINGLE} carry a single real season spread
-                deterministically. Ages from nflverse birthdates as of the ${DATA_SEASON} draft.`}
-                Model. Weekly baselines are robust season points per game; age effects use position-specific career
+                deterministically. Ages from nflverse birthdates as of the ${DATA_SEASON} draft. `}
+                Model. Season projections are recency- and games-weighted per-game rates x an availability-shrunk
+                expected-games estimate, re-based through position age curves, with empirical injury-recovery
+                multipliers learned from every comparable position-x-body-part case since 2010 (backtested above;
+                weekly what-if baselines divide that projection per game). Age effects use position-specific career
                 curves applied relative to actual age; injury statuses set an active-game probability and an
                 effectiveness discount; wind and precipitation scale with positional pass-game sensitivity and are
                 ignored in domes; kickers are treated as highly wind-sensitive. Draft pipeline per the repo: robust
