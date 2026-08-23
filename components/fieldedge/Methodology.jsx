@@ -209,7 +209,7 @@ export default function Methodology() {
         <SectionBar num="09" title="Known Limits" />
         <H>What this does not model</H>
         <P>
-          No schedule-strength adjustment; the Edge column's TD-regression signal informs value but not the headline projection; rookies with zero NFL games
+          No schedule-strength adjustment; the Edge column&rsquo;s TD-regression signal informs value but not the headline projection; rookies with zero NFL games
           enter only through their market rank; and the role/depth-chart factor lives in the weekly lab,
           not the season number. Model estimates are probabilistic — the risk column and the lab&rsquo;s
           floor/ceiling bands are as much the product as the point projection.
