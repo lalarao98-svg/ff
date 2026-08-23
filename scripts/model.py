@@ -24,6 +24,7 @@ import gzip
 import io
 import math
 import os
+import re
 import urllib.request
 from collections import Counter, defaultdict
 
@@ -101,8 +102,16 @@ def birth_dates():
     return {r["gsis_id"]: r["birth_date"] for r in rows if r.get("gsis_id") and r.get("birth_date")}
 
 
+_NAME_SUFFIXES = {"JR", "SR", "II", "III", "IV", "V"}
+
+
 def norm_name(name):
-    return "".join(c for c in (name or "").upper() if c.isalnum())
+    """Match names across sources: FantasyPros carries generational
+    suffixes (Patrick Mahomes II, Travis Etienne Jr.), nflverse does not."""
+    parts = re.sub(r"[^A-Z0-9 ]", "", (name or "").upper()).split()
+    while len(parts) > 1 and parts[-1] in _NAME_SUFFIXES:
+        parts.pop()
+    return "".join(parts)
 
 
 def latest_ecr():

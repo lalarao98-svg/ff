@@ -2,12 +2,15 @@
  *
  * Opponents draft by market consensus: best available FantasyPros ECR,
  * with light need-based caps (no 2nd QB or TE before round 9, kickers only
- * in the last two rounds). Your picks are recommended by full-draft rollout:
- * for each candidate, simulate the entire remaining draft (opponents by
- * consensus, your future turns filled greedily by marginal roster value)
- * and rank candidates by the final projected value of your completed roster.
- * Every actual pick you record replaces the assumption for that slot, and
- * everything downstream re-simulates.
+ * in the last two rounds); the same consensus, treated probabilistically,
+ * prices every future pick: each position's expected best-available
+ * projection at a later pick integrates over every player's survival odds
+ * (Normal(consensus rank, expert disagreement)). Your plan is built by
+ * lookahead over an opportunity-cost rollout -- take the position whose
+ * value decays fastest, never reaching far ahead of a player's consensus
+ * rank (ADP) -- and candidates for the current pick are ranked by the final
+ * projected value of the completed roster. Every actual pick you record
+ * replaces an assumption, and everything downstream re-solves.
  */
 
 import { UNIVERSE, type UniversePlayer } from "./universe";
@@ -125,98 +128,6 @@ function opponentPick(
   return null;
 }
 
-/** My greedy rollout choice: highest marginal roster value; K only late. */
-function myGreedyPick(
-  available: UniversePlayer[],
-  taken: Set<string>,
-  roster: UniversePlayer[],
-  round: number,
-  rounds: number,
-): UniversePlayer | null {
-  const baseTotal = rosterValue(roster).total;
-  const lastRounds = round >= rounds - 2;
-  const myCounts: Record<string, number> = {};
-  for (const p of roster) myCounts[p.pos] = (myCounts[p.pos] ?? 0) + 1;
-  let best: UniversePlayer | null = null;
-  let bestVal = -Infinity;
-  let seen = 0;
-  for (const p of available) {
-    if (taken.has(p.id)) continue;
-    if (p.pos === "K" && !lastRounds) continue;
-    if (MY_CAPS[p.pos] != null && (myCounts[p.pos] ?? 0) >= MY_CAPS[p.pos]) continue;
-    const v = marginalValue(roster, baseTotal, p);
-    if (v > bestVal) {
-      bestVal = v;
-      best = p;
-    }
-    if (++seen >= 60) break; // the board is consensus-sorted; deeper is never better
-  }
-  // Force a kicker with the final pick if still missing.
-  if (round === rounds - 1 && !(myCounts.K ?? 0)) {
-    const k = available.find((p) => !taken.has(p.id) && p.pos === "K");
-    if (k) return k;
-  }
-  return best;
-}
-
-export interface SimResult {
-  /** Your projected picks for the rest of the draft: [round, player]. */
-  plan: { round: number; overall: number; p: UniversePlayer }[];
-  roster: UniversePlayer[];
-  value: number;
-  lineup: { slot: string; p: UniversePlayer }[];
-  /** Pool as predicted at each of your future picks (for wait-cost math). */
-  availableAtMyPicks: Map<number, UniversePlayer[]>;
-}
-
-/**
- * Simulate the remaining draft from the recorded picks. `forcedNext`, if
- * given, is taken with your next pick; your later turns use the greedy
- * rollout. Opponents always follow the consensus model.
- */
-export function simulateDraft(cfg: DraftConfig, picks: DraftPick[], forcedNext?: string): SimResult {
-  const taken = new Set(picks.map((p) => p.playerId));
-  const counts: Record<string, Record<string, number>> = {};
-  const rosters: Record<number, UniversePlayer[]> = {};
-  for (const pk of picks) {
-    const pl = BOARD.find((p) => p.id === pk.playerId);
-    if (!pl) continue;
-    (counts[pk.team] ??= {})[pl.pos] = (counts[pk.team]?.[pl.pos] ?? 0) + 1;
-    (rosters[pk.team] ??= []).push(pl);
-  }
-  const me = cfg.slot - 1;
-  const plan: SimResult["plan"] = [];
-  const availableAtMyPicks = new Map<number, UniversePlayer[]>();
-  let forced = forcedNext;
-
-  const total = cfg.teams * cfg.rounds;
-  for (let i = picks.length; i < total; i++) {
-    const team = teamOnClock(i, cfg.teams);
-    const round = Math.floor(i / cfg.teams);
-    let choice: UniversePlayer | null;
-    if (team === me) {
-      availableAtMyPicks.set(i, BOARD.filter((p) => !taken.has(p.id)).slice(0, 250));
-      if (forced) {
-        choice = BOARD.find((p) => p.id === forced) ?? null;
-        forced = undefined;
-      } else {
-        choice = myGreedyPick(BOARD, taken, rosters[me] ?? [], round, cfg.rounds);
-      }
-      if (choice) plan.push({ round: round + 1, overall: i, p: choice });
-    } else {
-      choice = opponentPick(BOARD, taken, counts[team] ?? {}, round, cfg.rounds);
-    }
-    if (!choice) continue;
-    taken.add(choice.id);
-    (counts[team] ??= {})[choice.pos] = (counts[team]?.[choice.pos] ?? 0) + 1;
-    (rosters[team] ??= []).push(choice);
-  }
-
-  const mine = rosters[me] ?? [];
-  const rv = rosterValue(mine);
-  return { plan, roster: mine, value: rv.total, lineup: rv.lineup, availableAtMyPicks };
-}
-
 export interface Candidate {
   p: UniversePlayer;
   /** Final projected roster value if this pick is made now. */
@@ -246,18 +157,254 @@ function normalCdf(z: number): number {
  * modeling his selection pick as Normal(ecr, max(6, 2.5 x expert sd)). */
 export function survivalProb(p: UniversePlayer, nowPick: number, atPick: number): number | null {
   if (p.ecr == null) return null;
+  const key = `${p.id}:${nowPick}:${atPick}`;
+  const hit = SURV_CACHE.get(key);
+  if (hit !== undefined) return hit;
   const sd = Math.max(6, 2.5 * (p.ecrSd ?? 3));
   const pNow = 1 - normalCdf((nowPick - p.ecr) / sd);
   const pAt = 1 - normalCdf((atPick - p.ecr) / sd);
-  if (pNow <= 1e-9) return 0;
-  return Math.max(0, Math.min(1, pAt / pNow));
+  const out = pNow <= 1e-9 ? 0 : Math.max(0, Math.min(1, pAt / pNow));
+  if (SURV_CACHE.size > 60000) SURV_CACHE.clear();
+  SURV_CACHE.set(key, out);
+  return out;
+}
+const SURV_CACHE = new Map<string, number>();
+
+export interface EvBest {
+  /** Expected projection of the best player still available at the pick. */
+  ev: number;
+  /** The player the pick most likely lands: highest-projected with survival
+   * >= 0.5 whose consensus rank is within reach of the pick (ADP honesty --
+   * the plan never assumes taking someone far ahead of where the market
+   * drafts him; waiting is priced by the survival math instead). */
+  likely: UniversePlayer | null;
+}
+
+/** How many picks ahead of a player's consensus rank a planned pick may
+ * reach. Tight early (nobody takes ADP-26 Josh Allen in round 1-2), looser
+ * late where consensus ranks are noisy anyway. */
+export function maxReach(atPickNo: number): number {
+  return Math.max(5, 0.1 * atPickNo);
+}
+
+/** For each position: the expected best-available projection at a future
+ * pick, integrating over every player's probability of surviving that long
+ * (best = highest projection; P(best is p) = P(p survives) x P(all better
+ * players are gone)). This is what makes waiting on a position priceable. */
+export function expectedBestByPos(taken: Set<string>, nowPickNo: number, atPickNo: number): Record<string, EvBest> {
+  const out: Record<string, EvBest> = {};
+  const reach = maxReach(atPickNo);
+  for (const pos of ["QB", "RB", "WR", "TE", "K"]) {
+    const pool = BOARD.filter((p) => p.pos === pos && !taken.has(p.id))
+      .sort((a, b) => b.proj - a.proj)
+      .slice(0, 30);
+    let allBetterGone = 1;
+    let ev = 0;
+    let likely: UniversePlayer | null = null;
+    for (const p of pool) {
+      const pa = p.ecr == null ? 1 : survivalProb(p, nowPickNo, atPickNo) ?? 1;
+      ev += p.proj * pa * allBetterGone;
+      if (likely == null && pa >= 0.5 && (p.ecr == null || p.ecr - atPickNo <= reach)) likely = p;
+      allBetterGone *= 1 - pa;
+      if (allBetterGone < 1e-4) break;
+    }
+    if (pool.length) ev += pool[pool.length - 1].proj * allBetterGone;
+    out[pos] = { ev, likely };
+  }
+  return out;
+}
+
+export interface PlanResult {
+  plan: {
+    round: number;
+    overall: number;
+    p: { id: string; name: string; pos: string; proj: number };
+    /** Consensus rank of the player the pick most likely lands (ADP check). */
+    ecr: number | null;
+  }[];
+  value: number;
+  lineup: { slot: string; p: UniversePlayer }[];
+}
+
+const PLAN_POS = ["QB", "RB", "WR", "TE", "K"];
+
+function eligiblePositions(counts: Record<string, number>, round: number, rounds: number): string[] {
+  const lastRounds = round >= rounds - 1;
+  return PLAN_POS.filter((pos) => {
+    if (pos === "K" && !lastRounds) return false;
+    if (MY_CAPS[pos] != null && (counts[pos] ?? 0) >= MY_CAPS[pos]) return false;
+    return true;
+  });
+}
+
+/** Pick a position for pick `m` by opportunity cost: the position whose
+ * marginal roster value decays the most between this pick and my next one
+ * (`m2`). Absolute marginal value is the wrong rule -- an empty QB slot
+ * always looks enormous in raw points, but QBs keep falling for rounds, so
+ * what matters is how much of the value is still there if you wait. */
+function pickByUrgency(
+  roster: UniversePlayer[],
+  taken: Set<string>,
+  m: number,
+  m2: number | null,
+  nowPickNo: number,
+  eligible: string[],
+): { pos: string; ev: EvBest } | null {
+  const evs = expectedBestByPos(taken, nowPickNo, m + 1);
+  const evsNext = m2 != null ? expectedBestByPos(taken, nowPickNo, m2 + 1) : null;
+  // ADP discipline: only positions with a within-reach likely target are
+  // draftable here (unless none has one -- then take the best regardless).
+  const inReach = eligible.filter((pos) => evs[pos].likely != null);
+  const pool = inReach.length ? inReach : eligible;
+  const baseTotal = rosterValue(roster).total;
+  let bestPos: string | null = null;
+  let bestScore = -Infinity;
+  let bestMarg = -Infinity;
+  for (const pos of pool) {
+    const margNow =
+      rosterValue([...roster, { pos, proj: evs[pos].ev, id: `ev:${pos}:${m}` } as unknown as UniversePlayer]).total -
+      baseTotal;
+    const margLater = evsNext
+      ? rosterValue([...roster, { pos, proj: evsNext[pos].ev, id: `ev:${pos}:${m2}` } as unknown as UniversePlayer])
+          .total - baseTotal
+      : 0;
+    const score = margNow - margLater;
+    if (score > bestScore || (score === bestScore && margNow > bestMarg)) {
+      bestScore = score;
+      bestMarg = margNow;
+      bestPos = pos;
+    }
+  }
+  return bestPos ? { pos: bestPos, ev: evs[bestPos] } : null;
+}
+
+/** Fill the given future picks with EV pseudo-players via the urgency rule.
+ * This is the rollout inside the lookahead planner below. */
+function greedyFillValue(
+  cfg: DraftConfig,
+  roster: UniversePlayer[],
+  taken: Set<string>,
+  futurePicks: number[],
+  nowPickNo: number,
+): number {
+  const r = [...roster];
+  const t = new Set(taken);
+  for (let j = 0; j < futurePicks.length; j++) {
+    const m = futurePicks[j];
+    const m2 = j + 1 < futurePicks.length ? futurePicks[j + 1] : null;
+    const round = Math.floor(m / cfg.teams) + 1;
+    const counts: Record<string, number> = {};
+    for (const p of r) counts[p.pos] = (counts[p.pos] ?? 0) + 1;
+    if (round === cfg.rounds && !(counts.K ?? 0)) {
+      const k = BOARD.find((p) => p.pos === "K" && !t.has(p.id));
+      if (k) {
+        r.push(k);
+        t.add(k.id);
+        continue;
+      }
+    }
+    const choice = pickByUrgency(r, t, m, m2, nowPickNo, eligiblePositions(counts, round, cfg.rounds));
+    if (!choice) continue;
+    r.push({ id: `ev:${choice.pos}:${m}`, name: "", pos: choice.pos, proj: choice.ev.ev } as unknown as UniversePlayer);
+    if (choice.ev.likely) t.add(choice.ev.likely.id);
+  }
+  return rosterValue(r).total;
+}
+
+/**
+ * Probability-aware plan for your remaining picks. Two ideas keep it honest
+ * against ADP. First, each future pick sees the EXPECTED best-available
+ * projection per position -- every player weighted by his probability of
+ * surviving that long under a Normal(consensus rank, expert disagreement)
+ * model -- rather than assuming players vanish in strict consensus order.
+ * Second, each position is chosen by one-step lookahead: take it, greedily
+ * complete the rest of the plan, and keep whichever choice maximizes the
+ * FINAL roster value. That comparison is what prices waiting correctly: a
+ * QB's expected value decays slowly across rounds (the market drafts them
+ * late), so spending an early pick on one forfeits fast-decaying RB/WR
+ * value and the lookahead defers the QB -- no hand-coded round rules.
+ */
+export function planExpected(cfg: DraftConfig, picks: DraftPick[], forcedNextId?: string): PlanResult {
+  const taken = new Set(picks.map((p) => p.playerId));
+  const me = cfg.slot - 1;
+  const roster: UniversePlayer[] = [];
+  for (const pk of picks) {
+    if (pk.team !== me) continue;
+    const pl = BOARD.find((p) => p.id === pk.playerId);
+    if (pl) roster.push(pl);
+  }
+  const n0 = picks.length;
+  const nowPickNo = n0 + 1;
+  const myPicks = myPickNumbers(cfg).filter((i) => i >= n0);
+  const plan: PlanResult["plan"] = [];
+  let forced = forcedNextId;
+
+  for (let j = 0; j < myPicks.length; j++) {
+    const m = myPicks[j];
+    const rest = myPicks.slice(j + 1);
+    const round = Math.floor(m / cfg.teams) + 1;
+    const counts: Record<string, number> = {};
+    for (const p of roster) counts[p.pos] = (counts[p.pos] ?? 0) + 1;
+
+    if (forced) {
+      const pl = BOARD.find((p) => p.id === forced);
+      forced = undefined;
+      if (pl) {
+        roster.push(pl);
+        taken.add(pl.id);
+        plan.push({ round, overall: m, p: pl, ecr: pl.ecr });
+        continue;
+      }
+    }
+
+    // Force a kicker with the final pick if still missing.
+    if (round === cfg.rounds && !(counts.K ?? 0)) {
+      const k = BOARD.find((p) => p.pos === "K" && !taken.has(p.id));
+      if (k) {
+        roster.push(k);
+        taken.add(k.id);
+        plan.push({ round, overall: m, p: k, ecr: k.ecr });
+        continue;
+      }
+    }
+
+    const evs = expectedBestByPos(taken, nowPickNo, m + 1);
+    const elig = eligiblePositions(counts, round, cfg.rounds);
+    const inReach = elig.filter((pos) => evs[pos].likely != null);
+    const pool = inReach.length ? inReach : elig;
+    let bestPos: string | null = null;
+    let bestVal = -Infinity;
+    for (const pos of pool) {
+      const pseudo = { id: `ev:${pos}:${m}`, name: "", pos, proj: evs[pos].ev } as unknown as UniversePlayer;
+      const trialTaken = evs[pos].likely ? new Set([...taken, evs[pos].likely.id]) : taken;
+      const val = greedyFillValue(cfg, [...roster, pseudo], trialTaken, rest, nowPickNo);
+      if (val > bestVal) {
+        bestVal = val;
+        bestPos = pos;
+      }
+    }
+    if (!bestPos) continue;
+    const chosen = evs[bestPos];
+    const pseudo = {
+      id: `ev:${bestPos}:${m}`,
+      name: chosen.likely ? chosen.likely.name : `Best ${bestPos} available`,
+      pos: bestPos,
+      proj: chosen.ev,
+    } as unknown as UniversePlayer;
+    roster.push(pseudo);
+    plan.push({ round, overall: m, p: pseudo, ecr: chosen.likely?.ecr ?? null });
+    if (chosen.likely) taken.add(chosen.likely.id);
+  }
+
+  const rv = rosterValue(roster);
+  return { plan, value: rv.total, lineup: rv.lineup };
 }
 
 export interface Recommendation {
   onClockOverall: number;
   round: number;
   candidates: Candidate[];
-  baseline: SimResult;
+  baseline: PlanResult;
 }
 
 /** Ranked recommendations for your next pick given the recorded picks. */
@@ -267,18 +414,13 @@ export function recommend(cfg: DraftConfig, picks: DraftPick[]): Recommendation 
   while (i < total && !isMyPick(i, cfg)) i++;
   if (i >= total) return null;
 
-  const baseline = simulateDraft(cfg, picks);
   const taken = new Set(picks.map((p) => p.playerId));
   const nowAvailable = BOARD.filter((p) => !taken.has(p.id));
+  const nowPickNo = i + 1;
+  const future = myPickNumbers(cfg).filter((m) => m > i);
+  const nextPickNo = future.length ? future[0] + 1 : null;
+  const evNext = nextPickNo != null ? expectedBestByPos(taken, nowPickNo, nextPickNo) : null;
 
-  // Best available later at each position (opponents keep drafting between
-  // your turns), for the wait-cost readout.
-  const myFuture = [...baseline.availableAtMyPicks.keys()].sort((a, b) => a - b);
-  const nextPool = myFuture.length > 1 ? baseline.availableAtMyPicks.get(myFuture[1]) ?? [] : [];
-  const bestLater: Record<string, number> = {};
-  for (const p of nextPool) bestLater[p.pos] = Math.max(bestLater[p.pos] ?? 0, p.proj);
-
-  // Candidate set: strongest by marginal value plus the market's top board.
   const me = cfg.slot - 1;
   const myRoster: UniversePlayer[] = [];
   for (const pk of picks) {
@@ -290,25 +432,46 @@ export function recommend(cfg: DraftConfig, picks: DraftPick[]): Recommendation 
   const baseTotal = rosterValue(myRoster).total;
   const scored = nowAvailable.slice(0, 120).map((p) => ({ p, mv: marginalValue(myRoster, baseTotal, p) }));
   scored.sort((a, b) => b.mv - a.mv);
-  const shortlist = [...new Set([...scored.slice(0, 14).map((s) => s.p), ...nowAvailable.slice(0, 6)])].slice(0, 16);
+  // Candidates worth pricing: the market's own menu (top of the consensus
+  // board), the best-projected player at each position, and the best raw
+  // marginal adds. Marginal value alone would flood the list with QBs --
+  // absolute points, not draft value.
+  const topPos: UniversePlayer[] = [];
+  for (const pos of ["QB", "RB", "WR", "TE"])
+    topPos.push(...nowAvailable.filter((q) => q.pos === pos).sort((a, b) => b.proj - a.proj).slice(0, 2));
+  const shortlist = [
+    ...new Set([...nowAvailable.slice(0, 10), ...topPos, ...scored.slice(0, 8).map((s) => s.p)]),
+  ].slice(0, 20);
 
-  const nowPickNo = i + 1; // 1-based, matches ECR's pick scale
-  const nextPickNo = myFuture.length > 1 ? myFuture[1] + 1 : null;
   const candidates: Candidate[] = shortlist.map((p) => {
-    const sim = simulateDraft(cfg, picks, p.id);
+    // Rank candidates by the urgency rollout of the rest of the draft --
+    // the same engine as the plan, cheap enough to run for every candidate
+    // on every live pick.
+    const finalValue = greedyFillValue(cfg, [...myRoster, p], new Set([...taken, p.id]), future, nowPickNo);
     const bestNow = Math.max(...nowAvailable.filter((q) => q.pos === p.pos).slice(0, 40).map((q) => q.proj));
     return {
       p,
-      finalValue: sim.value,
-      waitCost: Math.max(0, bestNow - (bestLater[p.pos] ?? 0)),
+      finalValue,
+      waitCost: evNext ? Math.max(0, bestNow - evNext[p.pos].ev) : 0,
       vor: p.proj - (POS_BASELINE[p.pos] ?? 0),
       adpDelta: p.ecr != null ? Math.round(nowPickNo - p.ecr) : null,
       survival: nextPickNo != null ? survivalProb(p, nowPickNo, nextPickNo) : null,
     };
   });
-  candidates.sort((a, b) => b.finalValue - a.finalValue);
-  const best = candidates[0] ? simulateDraft(cfg, picks, candidates[0].p.id) : baseline;
-  return { onClockOverall: i, round: Math.floor(i / cfg.teams) + 1, candidates, baseline: best };
+  // ADP discipline mirrors the planner: a candidate the market prices far
+  // after this pick is a "wait -- he'll still be there" case (his P(next)
+  // column says how confidently), so in-reach candidates rank first and
+  // reaches sort below them, whatever their roster math says.
+  const reachLimit = maxReach(nowPickNo);
+  const isReach = (c: Candidate) => c.p.ecr != null && c.p.ecr - nowPickNo > reachLimit;
+  candidates.sort((a, b) => {
+    const ra = isReach(a) ? 1 : 0;
+    const rb = isReach(b) ? 1 : 0;
+    if (ra !== rb) return ra - rb;
+    return b.finalValue - a.finalValue;
+  });
+  const baseline = candidates[0] ? planExpected(cfg, picks, candidates[0].p.id) : planExpected(cfg, picks);
+  return { onClockOverall: i, round: Math.floor(i / cfg.teams) + 1, candidates, baseline };
 }
 
 /** Append consensus opponent picks until it is your turn (or the draft ends). */

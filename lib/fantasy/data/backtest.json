@@ -153,34 +153,34 @@
    "label": "+ market consensus (50/50 blend with FantasyPros ECR)",
    "positions": {
     "QB": {
-     "spearman": 0.7611,
-     "mae": 58.58,
-     "maeTop": 73.61,
+     "spearman": 0.7622,
+     "mae": 58.47,
+     "maeTop": 73.62,
      "n": 275
     },
     "RB": {
-     "spearman": 0.7665,
-     "mae": 35.53,
-     "maeTop": 56.35,
+     "spearman": 0.7709,
+     "mae": 35.09,
+     "maeTop": 55.51,
      "n": 508
     },
     "TE": {
-     "spearman": 0.7552,
-     "mae": 20.35,
-     "maeTop": 29.92,
+     "spearman": 0.7547,
+     "mae": 20.39,
+     "maeTop": 29.98,
      "n": 417
     },
     "WR": {
-     "spearman": 0.7887,
-     "mae": 30.55,
-     "maeTop": 47.08,
+     "spearman": 0.7914,
+     "mae": 30.41,
+     "maeTop": 47.3,
      "n": 744
     }
    },
    "overall": {
-    "spearman": 0.7679,
-    "mae": 36.25,
-    "maeTop": 51.74
+    "spearman": 0.7698,
+    "mae": 36.09,
+    "maeTop": 51.6
    }
   }
  }

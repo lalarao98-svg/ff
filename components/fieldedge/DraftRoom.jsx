@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BOARD, advanceToMyPick, isMyPick, myPickNumbers, recommend, simulateDraft, teamOnClock } from "@/lib/fantasy/draft";
+import { BOARD, advanceToMyPick, isMyPick, myPickNumbers, planExpected, recommend, teamOnClock } from "@/lib/fantasy/draft";
 import { BY_ID, UNIVERSE, label } from "@/lib/fantasy/universe";
 import { SectionBar, SliderRow, Stat, T } from "./atoms";
 
@@ -122,7 +122,7 @@ export default function DraftRoom() {
     [effTeams, effSlot, effRounds, effPicks, done, myTurn],
   );
   const outlookPlain = useMemo(
-    () => simulateDraft(cfg, effPicks),
+    () => planExpected(cfg, effPicks),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [effTeams, effSlot, effRounds, effPicks],
   );
@@ -316,8 +316,8 @@ export default function DraftRoom() {
               <table style={{ width: "100%", borderCollapse: "collapse" }} className="data">
                 <thead>
                   <tr>
-                    {["", "Player", "Pos", "Proj", "VOR", "± Mkt", "P(next)", "Final", "Wait", ""].map((h, i) => (
-                      <th key={i} style={{ ...cell, borderBottom: "1px solid " + T.black, textAlign: i >= 3 && i <= 8 ? "right" : "left", fontSize: 11, fontWeight: 500, whiteSpace: "nowrap" }}>{h}</th>
+                    {["", "Player", "Pos", "Proj", "VOR", "± Mkt", "Edge", "P(next)", "Final", "Wait", ""].map((h, i) => (
+                      <th key={i} style={{ ...cell, borderBottom: "1px solid " + T.black, textAlign: i >= 3 && i <= 9 ? "right" : "left", fontSize: 11, fontWeight: 500, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -334,6 +334,9 @@ export default function DraftRoom() {
                       <td style={{ ...cell, textAlign: "right" }}>{c.vor.toFixed(0)}</td>
                       <td style={{ ...cell, textAlign: "right", color: c.adpDelta == null ? T.warmGray : c.adpDelta >= 0 ? T.pos : T.neg }}>
                         {c.adpDelta == null ? "—" : (c.adpDelta >= 0 ? "+" : "") + c.adpDelta}
+                      </td>
+                      <td style={{ ...cell, textAlign: "right", color: c.p.edge == null ? T.warmGray : c.p.edge >= 0 ? T.pos : T.neg }}>
+                        {c.p.edge == null ? "—" : (c.p.edge >= 0 ? "+" : "") + c.p.edge.toFixed(0)}
                       </td>
                       <td style={{ ...cell, textAlign: "right", color: c.survival != null && c.survival >= 0.6 ? T.pos : T.warmGray }}>
                         {c.survival == null ? "—" : Math.round(c.survival * 100) + "%"}
@@ -352,8 +355,10 @@ export default function DraftRoom() {
             </div>
             <div className="data" style={{ fontSize: 9, color: T.warmGray, marginTop: 4 }}>
               VOR: points above positional replacement. ± Mkt: picks of value vs consensus (negative = reach).
+              Edge: the usage-regression&rsquo;s points vs the market price (RB/WR/TE; positive = undervalued).
               P(next): chance he survives to your next pick. Final: your completed roster if you take him now.
-              Wait: points lost at his position by passing until your next turn.
+              Wait: points lost at his position by passing until your next turn. Players the market prices
+              well after this pick rank below the in-reach names — P(next) says how safely you can wait.
               {liveActive ? " Make the pick in ESPN — it lands here on the next sync." : ""}
             </div>
           </div>
@@ -370,11 +375,18 @@ export default function DraftRoom() {
                     <td style={{ ...cell, color: T.warmGray, width: 90 }}>R{s.round} · #{s.overall + 1}</td>
                     <td style={{ ...cell, fontWeight: 500 }}>{s.p.name}</td>
                     <td style={{ ...cell, color: T.warmGray, width: 40 }}>{s.p.pos}</td>
+                    <td style={{ ...cell, textAlign: "right", color: T.warmGray, width: 70, whiteSpace: "nowrap" }}>
+                      {s.ecr != null ? `ADP ${Math.round(s.ecr)}` : ""}
+                    </td>
                     <td style={{ ...cell, textAlign: "right", width: 56 }}>{s.p.proj.toFixed(0)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <div className="data" style={{ fontSize: 9, color: T.warmGray, marginTop: 4 }}>
+              Each row is the expected value of that pick; the player named is who it most likely lands,
+              with his market consensus rank (ADP) — the plan never reaches far ahead of it.
+            </div>
           </div>
         )}
 

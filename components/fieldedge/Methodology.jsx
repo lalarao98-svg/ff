@@ -174,21 +174,33 @@ export default function Methodology() {
 
       <div style={{ marginTop: 28 }}>
         <SectionBar num="07" title="Draft Room" />
-        <H>Your seat, simulated forward</H>
+        <H>Your seat, priced probabilistically</H>
         <P>
-          Given your league size and slot, opponents are assumed to draft the best available player by
-          market consensus, with light roster sense (no second QB or TE early; kickers late). At each of
-          your picks, every serious candidate is evaluated by simulating the <i>entire remaining
-          draft</i> — opponents by consensus, your future turns filled greedily by marginal roster
-          value — and candidates are ranked by the final projected value of your completed roster:
-          starters at full projection, bench at a steep discount above replacement. &ldquo;Cost of
-          waiting&rdquo; is the points you give up at a position by passing until your next turn — the
-          quantity that decides positional runs. Every real pick you record overwrites the assumption
-          for that slot and the whole plan re-optimizes. Connected to an ESPN league, the room mirrors
-          the real draft: the server polls ESPN&rsquo;s league API every 2.5 seconds (auth cookies never
-          leave the server), maps each selection to the model by ESPN player id, and recomputes on every
-          new pick — including P(next), the probability a candidate survives to your next turn under a
-          Normal(consensus rank, expert-disagreement) selection model.
+          Every player&rsquo;s selection pick is modeled as Normal(consensus rank,
+          expert-disagreement), which yields two things: P(next), the probability a candidate survives
+          to your next turn, and — integrating over the whole board — the <i>expected best-available
+          projection</i> at each of your future picks, position by position. Those decay curves are the
+          draft&rsquo;s real price system: RB and WR value falls fast round over round, while QBs keep
+          arriving for many rounds because the market drafts them late.
+        </P>
+        <P>
+          The plan for your remaining picks is built on those curves by opportunity cost: at each turn,
+          take the position whose value decays most by your next pick, chosen by lookahead so the whole
+          remaining sequence — not just the next pick — is what&rsquo;s maximized. Two honesty rules
+          anchor it to the market. The plan never assumes a pick lands a player far ahead of his
+          consensus rank (no phantom round-2 quarterbacks: a QB priced at pick 26 becomes plannable in
+          round 3, where the market actually takes him). And the player named on each planned pick is
+          the one it most likely lands, shown with his ADP so you can audit the plan against the market
+          line by line. Candidates for the pick you&rsquo;re on are ranked by the final projected value
+          of your completed roster — starters at full projection, bench at a steep discount above
+          replacement — with &ldquo;cost of waiting&rdquo; showing the points a position gives up if you
+          pass until your next turn, the quantity that decides positional runs.
+        </P>
+        <P>
+          Every real pick you record overwrites an assumption and the whole plan re-solves. Connected
+          to an ESPN league, the room mirrors the real draft: the server polls ESPN&rsquo;s league API
+          every 2.5 seconds (auth cookies never leave the server), maps each selection to the model by
+          ESPN player id, and recomputes on every new pick.
         </P>
       </div>
 
