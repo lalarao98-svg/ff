@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BOARD, advanceToMyPick, isMyPick, myPickNumbers, planExpected, recommend, teamOnClock } from "@/lib/fantasy/draft";
+import { BOARD, advanceToMyPick, applyAdp, isMyPick, myPickNumbers, planExpected, recommend, teamOnClock } from "@/lib/fantasy/draft";
 import { BY_ID, UNIVERSE, label } from "@/lib/fantasy/universe";
 import { SectionBar, SliderRow, Stat, T } from "./atoms";
 
@@ -25,6 +25,25 @@ export default function DraftRoom() {
   const [rounds, setRounds] = useState(saved?.rounds ?? 15);
   const [picks, setPicks] = useState(saved?.picks ?? []);
   const [query, setQuery] = useState("");
+
+  /* Real ESPN ADP overlay: fetched once (server caches 6h), applied to the
+   * whole engine so survival odds model actual drafter behavior. */
+  const [mkt, setMkt] = useState(null); // {source, syncedAt, n}
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/espn-adp", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!alive || !data.ok) return;
+        const map = new Map(Object.entries(data.adp).map(([id, a]) => [Number(id), a]));
+        const n = applyAdp(map);
+        setMkt({ source: data.source, syncedAt: data.syncedAt, n });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   /* ---------------- ESPN live sync ---------------- */
   const [liveOn, setLiveOn] = useState(saved?.liveOn ?? false);
@@ -119,12 +138,12 @@ export default function DraftRoom() {
   const rec = useMemo(
     () => (!done && myTurn ? recommend(cfg, effPicks) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [effTeams, effSlot, effRounds, effPicks, done, myTurn],
+    [effTeams, effSlot, effRounds, effPicks, done, myTurn, mkt],
   );
   const outlookPlain = useMemo(
     () => planExpected(cfg, effPicks),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [effTeams, effSlot, effRounds, effPicks],
+    [effTeams, effSlot, effRounds, effPicks, mkt],
   );
   // On your turn, show the plan that follows the top recommendation.
   const outlook = rec?.baseline ?? outlookPlain;
@@ -275,8 +294,15 @@ export default function DraftRoom() {
         <div className="display" style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.05, marginBottom: 8 }}>
           {done ? "Draft complete" : `Pick ${onClock + 1} of ${total} — round ${round}`}
         </div>
-        <div className="data" style={{ fontSize: 12, color: myTurn ? T.red : T.warmGray, fontWeight: myTurn ? 700 : 400, marginBottom: 16 }}>
+        <div className="data" style={{ fontSize: 12, color: myTurn ? T.red : T.warmGray, fontWeight: myTurn ? 700 : 400, marginBottom: 4 }}>
           {done ? "Every seat is filled." : myTurn ? "YOU ARE ON THE CLOCK" : `${teamName(clockTeam)} is on the clock`}
+        </div>
+        <div className="data" style={{ fontSize: 10, color: T.warmGray, marginBottom: 16 }}>
+          {mkt?.source === "espn"
+            ? `Market model: real ESPN ADP (${mkt.n} players, synced ${new Date(mkt.syncedAt).toLocaleTimeString()})`
+            : mkt?.source === "mock"
+              ? "Market model: mock ADP feed (development)"
+              : "Market model: expert consensus — live ESPN ADP loads when the API is reachable"}
         </div>
 
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
@@ -300,7 +326,7 @@ export default function DraftRoom() {
                 {searchResults.map((p) => (
                   <button key={p.id} onClick={() => record(p.id)}
                     style={{ display: "block", width: "100%", textAlign: "left", background: T.paper, border: "none", borderBottom: "1px solid " + T.hair, padding: "7px 10px", cursor: "pointer", fontSize: 12, fontFamily: "'Calibre','Inter',Arial,sans-serif" }}>
-                    {label(p)} <span style={{ color: T.warmGray }}>· proj {p.proj.toFixed(0)}{p.ecr != null ? ` · ECR ${p.ecr.toFixed(0)}` : ""}</span>
+                    {label(p)} <span style={{ color: T.warmGray }}>· proj {p.proj.toFixed(0)}{p.adp != null ? ` · ADP ${p.adp.toFixed(0)}` : p.ecr != null ? ` · ECR ${p.ecr.toFixed(0)}` : ""}</span>
                   </button>
                 ))}
               </div>

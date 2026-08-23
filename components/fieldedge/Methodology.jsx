@@ -22,7 +22,9 @@ export default function Methodology() {
       <P>
         {`Player statistics, weekly game logs, official injury reports (2009 onward), and birthdates come
         from nflverse-data, the open play-by-play project. Market consensus comes from the FantasyPros
-        redraft expert-consensus rank (ECR), mirrored daily by the DynastyProcess data project. The
+        redraft expert-consensus rank (ECR), mirrored daily by the DynastyProcess data project, and
+        drafter behavior comes from real ESPN average draft position (ADP), fetched from ESPN's public
+        API at every data refresh and again live by the app itself. The
         current universe: ${UNIVERSE.length.toLocaleString()} players who took the field in ${SEASONS_USED[SEASONS_USED.length - 1]};
         ${N_MULTI} carry two or more real seasons (${SEASONS_USED.join(", ")}), ${N_SINGLE} carry one.`}
       </P>
@@ -176,8 +178,10 @@ export default function Methodology() {
         <SectionBar num="07" title="Draft Room" />
         <H>Your seat, priced probabilistically</H>
         <P>
-          Every player&rsquo;s selection pick is modeled as Normal(consensus rank,
-          expert-disagreement), which yields two things: P(next), the probability a candidate survives
+          Every player&rsquo;s selection pick is modeled as Normal(market rank,
+          expert-disagreement), where the market rank is his real ESPN ADP — how actual drafters
+          behave — with the expert consensus as fallback when ESPN reports none. That yields two
+          things: P(next), the probability a candidate survives
           to your next turn, and — integrating over the whole board — the <i>expected best-available
           projection</i> at each of your future picks, position by position. Those decay curves are the
           draft&rsquo;s real price system: RB and WR value falls fast round over round, while QBs keep
@@ -188,10 +192,10 @@ export default function Methodology() {
           take the position whose value decays most by your next pick, chosen by lookahead so the whole
           remaining sequence — not just the next pick — is what&rsquo;s maximized. Two honesty rules
           anchor it to the market. The plan never assumes a pick lands a player far ahead of his
-          consensus rank (no phantom round-2 quarterbacks: a QB priced at pick 26 becomes plannable in
-          round 3, where the market actually takes him). And the player named on each planned pick is
-          the one it most likely lands, shown with his ADP so you can audit the plan against the market
-          line by line. Candidates for the pick you&rsquo;re on are ranked by the final projected value
+          market rank (no phantom round-2 quarterbacks: a QB drafters take at pick 26 becomes
+          plannable in round 3, where they actually take him). And the player named on each planned
+          pick is the one it most likely lands, shown with his ADP so you can audit the plan against
+          the market line by line. Candidates for the pick you&rsquo;re on are ranked by the final projected value
           of your completed roster — starters at full projection, bench at a steep discount above
           replacement — with &ldquo;cost of waiting&rdquo; showing the points a position gives up if you
           pass until your next turn, the quantity that decides positional runs.

@@ -100,6 +100,41 @@ def fetch_player_ids():
     return out
 
 
+def fetch_espn_adp(season):
+    """espn_id -> real ESPN average draft position for the coming season.
+
+    Public endpoint, no cookies. Unreachable from some build environments
+    (sandboxes); the caller treats an empty result as "no ADP this build"
+    and the app falls back to the expert consensus rank. The scheduled
+    GitHub Action runs where ESPN is reachable, so the committed dataset
+    normally carries real ADP.
+    """
+    url = (f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/"
+           f"seasons/{season}/players?scoringPeriodId=0&view=kona_player_info")
+    fltr = {"players": {"limit": 1000, "sortPercOwned": {"sortAsc": False, "sortPriority": 1}}}
+    req = urllib.request.Request(url, headers={
+        "x-fantasy-filter": json.dumps(fltr),
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            rows = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:  # noqa: BLE001 -- any network/parse failure just skips ADP
+        print(f"WARNING: ESPN ADP unavailable ({e}); shipping expert consensus only")
+        return {}
+    out = {}
+    for r in rows if isinstance(rows, list) else rows.get("players", []):
+        p = r.get("player") or r
+        adp = ((p.get("ownership") or {}).get("averageDraftPosition")
+               if isinstance(p, dict) else None)
+        pid = p.get("id") if isinstance(p, dict) else None
+        if pid and adp and 1 <= adp <= 500:
+            out[int(pid)] = float(adp)
+    print(f"ESPN ADP: {len(out)} players")
+    return out
+
+
 def stat_line(row, pos):
     stats = {}
     for col, key in STAT_MAP.items():
@@ -182,6 +217,19 @@ def main():
                 p["espnId"] = int(float(rec["espn_id"]))
             except ValueError:
                 pass
+
+    # Real ESPN ADP for the coming draft season: how drafters actually
+    # behave, which is what the Draft Room's survival math should model.
+    # (The app also refreshes this live through /api/espn-adp.)
+    espn_adp = fetch_espn_adp(latest + 1)
+    n_adp = 0
+    for p in out:
+        a = espn_adp.get(p.get("espnId"))
+        if a:
+            p["adp"] = round(a, 1)
+            n_adp += 1
+    if espn_adp:
+        print(f"ADP matched to {n_adp} players")
 
     # Predictive model layer: usage/recency + age curves + empirical injury
     # recovery (see scripts/model.py; validated in scripts/backtest.py).

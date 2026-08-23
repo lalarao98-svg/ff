@@ -1,19 +1,27 @@
 /* Snake-draft room engine.
  *
- * Opponents draft by market consensus: best available FantasyPros ECR,
- * with light need-based caps (no 2nd QB or TE before round 9, kickers only
- * in the last two rounds); the same consensus, treated probabilistically,
- * prices every future pick: each position's expected best-available
- * projection at a later pick integrates over every player's survival odds
- * (Normal(consensus rank, expert disagreement)). Your plan is built by
- * lookahead over an opportunity-cost rollout -- take the position whose
- * value decays fastest, never reaching far ahead of a player's consensus
- * rank (ADP) -- and candidates for the current pick are ranked by the final
- * projected value of the completed roster. Every actual pick you record
- * replaces an assumption, and everything downstream re-solves.
+ * Opponents draft by market behavior: real ESPN ADP where available (baked
+ * in at data-build time and refreshed live through /api/espn-adp), falling
+ * back to the FantasyPros expert consensus rank -- with light need-based
+ * caps (no 2nd QB or TE before round 9, kickers only in the last two
+ * rounds). The same rank, treated probabilistically, prices every future
+ * pick: each position's expected best-available projection at a later pick
+ * integrates over every player's survival odds (Normal(market rank, expert
+ * disagreement)). Your plan is built by lookahead over an opportunity-cost
+ * rollout -- take the position whose value decays fastest, never reaching
+ * far ahead of a player's market rank -- and candidates for the current
+ * pick are ranked by the final projected value of the completed roster.
+ * Every actual pick you record replaces an assumption, and everything
+ * downstream re-solves.
  */
 
 import { UNIVERSE, type UniversePlayer } from "./universe";
+
+/** The market-behavior rank: where drafters actually take the player (ESPN
+ * ADP), or where experts rank him when no ADP is known. */
+export function marketRank(p: UniversePlayer): number | null {
+  return p.adp ?? p.ecr;
+}
 
 export interface DraftConfig {
   teams: number;
@@ -54,13 +62,38 @@ export function myPickNumbers(cfg: DraftConfig): number[] {
   return out;
 }
 
-/* Market board: ECR ascending; unranked players after, by projection. */
-const BOARD: UniversePlayer[] = [...UNIVERSE].sort((a, b) => {
-  if (a.ecr != null && b.ecr != null) return a.ecr - b.ecr;
-  if (a.ecr != null) return -1;
-  if (b.ecr != null) return 1;
+/* Market board: market rank ascending; unranked players after, by
+ * projection. Re-sorted in place when live ADP arrives (applyAdp). */
+function boardCompare(a: UniversePlayer, b: UniversePlayer): number {
+  const ra = marketRank(a);
+  const rb = marketRank(b);
+  if (ra != null && rb != null) return ra - rb;
+  if (ra != null) return -1;
+  if (rb != null) return 1;
   return b.proj - a.proj;
-});
+}
+const BOARD: UniversePlayer[] = [...UNIVERSE].sort(boardCompare);
+
+/** Overlay live ESPN ADP (espnId -> adp) onto the universe: the board
+ * re-sorts and every cached survival probability is invalidated. Returns
+ * how many players were updated. */
+export function applyAdp(map: Map<number, number>): number {
+  let n = 0;
+  for (const p of UNIVERSE) {
+    if (p.espnId != null && map.has(p.espnId)) {
+      const adp = map.get(p.espnId)!;
+      if (adp >= 1 && adp <= 500 && p.adp !== adp) {
+        p.adp = adp;
+        n++;
+      }
+    }
+  }
+  if (n) {
+    BOARD.sort(boardCompare);
+    SURV_CACHE.clear();
+  }
+  return n;
+}
 
 const POS_BASELINE: Record<string, number> = {};
 for (const [pos, rank] of Object.entries(REPLACEMENT_RANK)) {
@@ -154,15 +187,16 @@ function normalCdf(z: number): number {
 }
 
 /** P(player still on the board at pick `atPick` | available at pick `nowPick`),
- * modeling his selection pick as Normal(ecr, max(6, 2.5 x expert sd)). */
+ * modeling his selection pick as Normal(market rank, max(6, 2.5 x expert sd)). */
 export function survivalProb(p: UniversePlayer, nowPick: number, atPick: number): number | null {
-  if (p.ecr == null) return null;
+  const rank = marketRank(p);
+  if (rank == null) return null;
   const key = `${p.id}:${nowPick}:${atPick}`;
   const hit = SURV_CACHE.get(key);
   if (hit !== undefined) return hit;
   const sd = Math.max(6, 2.5 * (p.ecrSd ?? 3));
-  const pNow = 1 - normalCdf((nowPick - p.ecr) / sd);
-  const pAt = 1 - normalCdf((atPick - p.ecr) / sd);
+  const pNow = 1 - normalCdf((nowPick - rank) / sd);
+  const pAt = 1 - normalCdf((atPick - rank) / sd);
   const out = pNow <= 1e-9 ? 0 : Math.max(0, Math.min(1, pAt / pNow));
   if (SURV_CACHE.size > 60000) SURV_CACHE.clear();
   SURV_CACHE.set(key, out);
@@ -202,9 +236,10 @@ export function expectedBestByPos(taken: Set<string>, nowPickNo: number, atPickN
     let ev = 0;
     let likely: UniversePlayer | null = null;
     for (const p of pool) {
-      const pa = p.ecr == null ? 1 : survivalProb(p, nowPickNo, atPickNo) ?? 1;
+      const rank = marketRank(p);
+      const pa = rank == null ? 1 : survivalProb(p, nowPickNo, atPickNo) ?? 1;
       ev += p.proj * pa * allBetterGone;
-      if (likely == null && pa >= 0.5 && (p.ecr == null || p.ecr - atPickNo <= reach)) likely = p;
+      if (likely == null && pa >= 0.5 && (rank == null || rank - atPickNo <= reach)) likely = p;
       allBetterGone *= 1 - pa;
       if (allBetterGone < 1e-4) break;
     }
@@ -219,7 +254,7 @@ export interface PlanResult {
     round: number;
     overall: number;
     p: { id: string; name: string; pos: string; proj: number };
-    /** Consensus rank of the player the pick most likely lands (ADP check). */
+    /** Market rank (ESPN ADP, or expert consensus) of the likely player. */
     ecr: number | null;
   }[];
   value: number;
@@ -352,7 +387,7 @@ export function planExpected(cfg: DraftConfig, picks: DraftPick[], forcedNextId?
       if (pl) {
         roster.push(pl);
         taken.add(pl.id);
-        plan.push({ round, overall: m, p: pl, ecr: pl.ecr });
+        plan.push({ round, overall: m, p: pl, ecr: marketRank(pl) });
         continue;
       }
     }
@@ -363,7 +398,7 @@ export function planExpected(cfg: DraftConfig, picks: DraftPick[], forcedNextId?
       if (k) {
         roster.push(k);
         taken.add(k.id);
-        plan.push({ round, overall: m, p: k, ecr: k.ecr });
+        plan.push({ round, overall: m, p: k, ecr: marketRank(k) });
         continue;
       }
     }
@@ -392,7 +427,7 @@ export function planExpected(cfg: DraftConfig, picks: DraftPick[], forcedNextId?
       proj: chosen.ev,
     } as unknown as UniversePlayer;
     roster.push(pseudo);
-    plan.push({ round, overall: m, p: pseudo, ecr: chosen.likely?.ecr ?? null });
+    plan.push({ round, overall: m, p: pseudo, ecr: chosen.likely ? marketRank(chosen.likely) : null });
     if (chosen.likely) taken.add(chosen.likely.id);
   }
 
@@ -454,7 +489,7 @@ export function recommend(cfg: DraftConfig, picks: DraftPick[]): Recommendation 
       finalValue,
       waitCost: evNext ? Math.max(0, bestNow - evNext[p.pos].ev) : 0,
       vor: p.proj - (POS_BASELINE[p.pos] ?? 0),
-      adpDelta: p.ecr != null ? Math.round(nowPickNo - p.ecr) : null,
+      adpDelta: marketRank(p) != null ? Math.round(nowPickNo - marketRank(p)!) : null,
       survival: nextPickNo != null ? survivalProb(p, nowPickNo, nextPickNo) : null,
     };
   });
@@ -463,7 +498,7 @@ export function recommend(cfg: DraftConfig, picks: DraftPick[]): Recommendation 
   // column says how confidently), so in-reach candidates rank first and
   // reaches sort below them, whatever their roster math says.
   const reachLimit = maxReach(nowPickNo);
-  const isReach = (c: Candidate) => c.p.ecr != null && c.p.ecr - nowPickNo > reachLimit;
+  const isReach = (c: Candidate) => marketRank(c.p) != null && marketRank(c.p)! - nowPickNo > reachLimit;
   candidates.sort((a, b) => {
     const ra = isReach(a) ? 1 : 0;
     const rb = isReach(b) ? 1 : 0;

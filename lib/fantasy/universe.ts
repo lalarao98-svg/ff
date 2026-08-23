@@ -32,6 +32,9 @@ export interface UniversePlayer {
   injPart: string | null;
   /** FantasyPros redraft-overall expert consensus rank (null if unranked). */
   ecr: number | null;
+  /** Real ESPN average draft position (build-time snapshot, overridable by
+   * the live /api/espn-adp feed). Null when ESPN reports none. */
+  adp: number | null;
   /** Expert disagreement on that rank. */
   ecrSd: number | null;
   /** ESPN player id (live draft sync). */
@@ -151,6 +154,7 @@ function buildUniverse(): UniversePlayer[] {
       injPart: model?.injPart ?? null,
       ecr: model?.ecr ?? null,
       ecrSd: model?.ecrSd ?? null,
+      adp: (raw as { adp?: number }).adp ?? null,
       espnId: (raw as RawExtras).espnId ?? null,
       tgtSh: (raw as { usage?: UsageFields }).usage?.tgtSh ?? null,
       edge: model?.edge ?? null,

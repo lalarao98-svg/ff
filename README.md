@@ -101,5 +101,8 @@ python3 scripts/build-dataset.py --seasons 2024 2025 2026
 ```
 
 Downloads regular-season player stats, injuries, and birthdates from
-nflverse-data plus the DynastyProcess ECR mirror, and rewrites
-`lib/fantasy/data/projections.json`.
+nflverse-data, the DynastyProcess ECR mirror, and real ESPN ADP from ESPN's
+public players API, and rewrites `lib/fantasy/data/projections.json`. The
+deployed app additionally refreshes ESPN ADP at runtime through
+`/api/espn-adp` (cached six hours), so the Draft Room's market model tracks
+actual drafter behavior even between data refreshes.
