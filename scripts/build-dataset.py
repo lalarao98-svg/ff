@@ -23,6 +23,11 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from model import History, learn_recovery, fantasy_points, latest_ecr, market_points, norm_name
 
+try:
+    from valuation import fit_valuation
+except ImportError:  # numpy missing: skip the edge layer rather than fail the build
+    fit_valuation = None
+
 RELEASE = "https://github.com/nflverse/nflverse-data/releases/download/stats_player"
 PLAYERS_URL = "https://github.com/nflverse/nflverse-data/releases/download/players/players.csv.gz"
 OUT = os.path.join(os.path.dirname(__file__), "..", "lib", "fantasy", "data", "projections.json")
@@ -208,6 +213,36 @@ def main():
                 p["model"]["blend"] = round(blend, 1)
                 p["model"]["ecr"] = mkt["ecr"]
                 p["model"]["ecrSd"] = mkt["sd"]
+
+    # Relative-value layer: usage/scheme regression (scripts/valuation.py).
+    # Ships each player's target/carry/air shares, team scheme context, the
+    # regression-predicted season, and EDGE = predicted minus market-implied
+    # points (positive = the market undervalues the usage profile).
+    if fit_valuation is not None:
+        val_hist = History(2016, latest)
+        val_report, val_predict, val_latest = fit_valuation(val_hist, latest)
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib", "fantasy", "data", "valuation.json"), "w") as vf:
+            json.dump(val_report, vf, indent=1)
+        for p in out:
+            f = val_latest.get(p["id"])
+            if f:
+                p["usage"] = {
+                    "tgtSh": round(f["tgtShare"], 4),
+                    "carSh": round(f["carryShare"], 4),
+                    "airSh": round(f["airShare"], 4),
+                    "passRate": round(f["teamPassRate"], 3),
+                    "concTgt": round(f["teamConcTgt"], 3),
+                    "tdOpp": round(f["tdPerOpp"], 4),
+                }
+            pred_ppg = val_predict(p["id"])
+            if pred_ppg is not None and p.get("model"):
+                reg_pts = pred_ppg * p["model"]["expGames"]
+                p["model"]["regProj"] = round(reg_pts, 1)
+                # Edge ships only where the regression beats the naive baseline
+                # out-of-sample (RB/WR/TE). For QBs it does not, and
+                # injury-shortened prior seasons make its QB calls misleading.
+                if p["id"] in market and p["pos"] in ("RB", "WR", "TE"):
+                    p["model"]["edge"] = round(reg_pts - market[p["id"]], 1)
 
     # Observed weekly scoring volatility from the last two seasons of
     # per-week stats (the what-if lab's simulation width).

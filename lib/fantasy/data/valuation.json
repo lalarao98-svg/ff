@@ -1,0 +1,194 @@
+{
+ "firstSeason": 2017,
+ "lastOutcome": 2025,
+ "positions": {
+  "QB": {
+   "n": 311,
+   "r2Test": 0.409,
+   "r2Baseline": 0.419,
+   "features": [
+    {
+     "feature": "Prior points per game",
+     "coefStd": 2.141,
+     "r": 0.648
+    },
+    {
+     "feature": "Games played",
+     "coefStd": 1.325,
+     "r": 0.539
+    },
+    {
+     "feature": "QB rushing yds/gm",
+     "coefStd": 0.965,
+     "r": 0.376
+    },
+    {
+     "feature": "TDs per opportunity",
+     "coefStd": 0.641,
+     "r": 0.444
+    },
+    {
+     "feature": "Team pass rate",
+     "coefStd": 0.588,
+     "r": 0.065
+    },
+    {
+     "feature": "Age",
+     "coefStd": -0.086,
+     "r": 0.015
+    }
+   ]
+  },
+  "RB": {
+   "n": 780,
+   "r2Test": 0.669,
+   "r2Baseline": 0.659,
+   "features": [
+    {
+     "feature": "Prior points per game",
+     "coefStd": 3.178,
+     "r": 0.766
+    },
+    {
+     "feature": "Age",
+     "coefStd": -0.659,
+     "r": -0.206
+    },
+    {
+     "feature": "Carry share %",
+     "coefStd": 0.648,
+     "r": 0.701
+    },
+    {
+     "feature": "TDs per opportunity",
+     "coefStd": -0.273,
+     "r": -0.009
+    },
+    {
+     "feature": "Team yardage concentration",
+     "coefStd": 0.2,
+     "r": 0.094
+    },
+    {
+     "feature": "Target share %",
+     "coefStd": 0.158,
+     "r": 0.571
+    },
+    {
+     "feature": "Games played",
+     "coefStd": -0.067,
+     "r": 0.37
+    },
+    {
+     "feature": "Team pass rate",
+     "coefStd": 0.004,
+     "r": -0.018
+    }
+   ]
+  },
+  "WR": {
+   "n": 1133,
+   "r2Test": 0.66,
+   "r2Baseline": 0.6,
+   "features": [
+    {
+     "feature": "Prior points per game",
+     "coefStd": 2.715,
+     "r": 0.76
+    },
+    {
+     "feature": "Target share %",
+     "coefStd": 1.017,
+     "r": 0.72
+    },
+    {
+     "feature": "Age",
+     "coefStd": -0.588,
+     "r": -0.052
+    },
+    {
+     "feature": "Scrimmage-yards share %",
+     "coefStd": -0.51,
+     "r": 0.739
+    },
+    {
+     "feature": "Air-yards share %",
+     "coefStd": 0.345,
+     "r": 0.69
+    },
+    {
+     "feature": "TDs per opportunity",
+     "coefStd": -0.308,
+     "r": 0.213
+    },
+    {
+     "feature": "Team target concentration",
+     "coefStd": 0.166,
+     "r": 0.103
+    },
+    {
+     "feature": "Team pass rate",
+     "coefStd": 0.1,
+     "r": 0.069
+    },
+    {
+     "feature": "Games played",
+     "coefStd": -0.086,
+     "r": 0.371
+    }
+   ]
+  },
+  "TE": {
+   "n": 610,
+   "r2Test": 0.609,
+   "r2Baseline": 0.558,
+   "features": [
+    {
+     "feature": "Prior points per game",
+     "coefStd": 1.328,
+     "r": 0.736
+    },
+    {
+     "feature": "Scrimmage-yards share %",
+     "coefStd": 1.165,
+     "r": 0.733
+    },
+    {
+     "feature": "Target share %",
+     "coefStd": -0.606,
+     "r": 0.693
+    },
+    {
+     "feature": "Air-yards share %",
+     "coefStd": 0.464,
+     "r": 0.699
+    },
+    {
+     "feature": "Team pass rate",
+     "coefStd": -0.242,
+     "r": -0.068
+    },
+    {
+     "feature": "Age",
+     "coefStd": -0.214,
+     "r": 0.018
+    },
+    {
+     "feature": "TDs per opportunity",
+     "coefStd": -0.169,
+     "r": 0.032
+    },
+    {
+     "feature": "Team target concentration",
+     "coefStd": 0.045,
+     "r": -0.011
+    },
+    {
+     "feature": "Games played",
+     "coefStd": -0.015,
+     "r": 0.429
+    }
+   ]
+  }
+ }
+}

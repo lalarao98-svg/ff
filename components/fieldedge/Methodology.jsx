@@ -1,5 +1,6 @@
 "use client";
 import BACKTEST from "@/lib/fantasy/data/backtest.json";
+import VALUATION from "@/lib/fantasy/data/valuation.json";
 import { DATA_SEASON, N_MULTI, N_SINGLE, SEASONS_USED, UNIVERSE } from "@/lib/fantasy/universe";
 import { SectionBar, T } from "./atoms";
 
@@ -125,7 +126,54 @@ export default function Methodology() {
       </div>
 
       <div style={{ marginTop: 28 }}>
-        <SectionBar num="06" title="Draft Room" />
+        <SectionBar num="06" title="Relative Value — the Edge column" />
+        <H>Usage and scheme, regressed on the future</H>
+        <P>
+          {`Every player-season since ${VALUATION.firstSeason} becomes a row of predictor variables: target
+          share %, carry share, air-yards share, scrimmage-yards share, TDs per opportunity, age, games,
+          and team scheme — pass rate, plus how concentrated the team's targets and yards are among its
+          skill players (a Herfindahl index: high = one or two dominant mouths, low = spread out). Each
+          position's next-season points per game is regressed on these, and the model is scored on a
+          held-out final season.`}
+        </P>
+        {Object.entries(VALUATION.positions).map(([pos, p]) => (
+          <div key={pos} style={{ marginBottom: 14 }}>
+            <div className="subhead" style={{ marginBottom: 4 }}>
+              {pos} — n={p.n}, out-of-sample R² {p.r2Test ?? "—"} vs {p.r2Baseline ?? "—"} for prior points alone
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse" }} className="data">
+              <tbody>
+                {p.features.slice(0, 5).map((f) => (
+                  <tr key={f.feature}>
+                    <td style={{ ...cell, width: "55%" }}>{f.feature}</td>
+                    <td style={{ ...cell, textAlign: "right" }}>coef {f.coefStd >= 0 ? "+" : ""}{f.coefStd.toFixed(2)}</td>
+                    <td style={{ ...cell, textAlign: "right", color: T.warmGray }}>r {f.r >= 0 ? "+" : ""}{f.r.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+        <H>What the regressions found</H>
+        <P>
+          For WRs and TEs, usage beats results: adding target share and air-yards share improves
+          out-of-sample accuracy well past prior scoring alone — opportunity is stickier than outcomes.
+          TDs per opportunity flips negative once usage is controlled: a player who scored unusually
+          often on his touches tends to regress, the classic overvaluation trap. RB carry share and
+          age both matter. For QBs the usage features add nothing out-of-sample, so no Edge is shown
+          for them.
+        </P>
+        <P>
+          <b>Edge</b>{" "}= the regression&rsquo;s predicted season (per-game prediction × expected games)
+          minus the market-implied points at the player&rsquo;s consensus rank. Positive: the market is
+          paying less than the usage profile has historically been worth. Negative: paying more.
+          Read it as a deliberately skeptical usage lens — it will fade recovery narratives and
+          camp hype, which is sometimes exactly right and sometimes the point of disagreement.
+        </P>
+      </div>
+
+      <div style={{ marginTop: 28 }}>
+        <SectionBar num="07" title="Draft Room" />
         <H>Your seat, simulated forward</H>
         <P>
           Given your league size and slot, opponents are assumed to draft the best available player by
@@ -145,7 +193,7 @@ export default function Methodology() {
       </div>
 
       <div style={{ marginTop: 28 }}>
-        <SectionBar num="07" title="Weekly What-If Lab" />
+        <SectionBar num="08" title="Weekly What-If Lab" />
         <H>Monte Carlo around a per-game baseline</H>
         <P>
           The lab divides the season projection per expected game and simulates 6,000 outcomes using the
@@ -158,10 +206,10 @@ export default function Methodology() {
       </div>
 
       <div style={{ marginTop: 28 }}>
-        <SectionBar num="08" title="Known Limits" />
+        <SectionBar num="09" title="Known Limits" />
         <H>What this does not model</H>
         <P>
-          No schedule-strength adjustment; no touchdown-regression term; rookies with zero NFL games
+          No schedule-strength adjustment; the Edge column's TD-regression signal informs value but not the headline projection; rookies with zero NFL games
           enter only through their market rank; and the role/depth-chart factor lives in the weekly lab,
           not the season number. Model estimates are probabilistic — the risk column and the lab&rsquo;s
           floor/ceiling bands are as much the product as the point projection.

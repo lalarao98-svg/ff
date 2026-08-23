@@ -36,6 +36,10 @@ export interface UniversePlayer {
   ecrSd: number | null;
   /** ESPN player id (live draft sync). */
   espnId: number | null;
+  /** Share of team targets last season (skill positions). */
+  tgtSh: number | null;
+  /** Regression edge vs market-implied points; positive = undervalued. */
+  edge: number | null;
   /** Season fantasy-point totals acting as sources (real + deterministic spread). */
   src: number[];
   /** How many real seasons back this player's sources. */
@@ -106,6 +110,17 @@ interface ModelFields {
   blend?: number;
   ecr?: number;
   ecrSd?: number;
+  regProj?: number;
+  edge?: number;
+}
+
+interface UsageFields {
+  tgtSh?: number;
+  carSh?: number;
+  airSh?: number;
+  passRate?: number;
+  concTgt?: number;
+  tdOpp?: number;
 }
 
 function buildUniverse(): UniversePlayer[] {
@@ -137,6 +152,8 @@ function buildUniverse(): UniversePlayer[] {
       ecr: model?.ecr ?? null,
       ecrSd: model?.ecrSd ?? null,
       espnId: (raw as RawExtras).espnId ?? null,
+      tgtSh: (raw as { usage?: UsageFields }).usage?.tgtSh ?? null,
+      edge: model?.edge ?? null,
       mean: mean(src),
       sdPts: mad(src),
       posRank: 0,

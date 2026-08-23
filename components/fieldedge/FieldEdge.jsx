@@ -729,7 +729,9 @@ export default function FieldEdge() {
                   real seasons (${SEASONS_USED.join(", ")}); ${N_SINGLE} carry a single real season spread
                   deterministically. Proj is the backtested model (usage & recency, age curves, empirical
                   injury comps) blended 50/50 with the FantasyPros expert consensus where ranked — the
-                  strongest variant below. ECR is the market's overall rank. Risk blends how much a player's
+                  strongest variant below. ECR is the market's overall rank. Tgt% is last season's share of team
+                  targets. Edge is the usage-regression's verdict vs the market — positive = undervalued
+                  (see Methodology). Risk blends how much a player's
                   seasons disagree with how much the experts disagree — standardized within position and
                   widened for players returning from major injuries. VOR is projected points above the
                   replacement starter at rank QB${repl.QB} / RB${repl.RB} / WR${repl.WR} / TE${repl.TE},
@@ -756,6 +758,8 @@ export default function FieldEdge() {
                         {th("Src", "nSrc")}
                         {th("ECR", "ecr")}
                         {th("Proj", "proj")}
+                        {th("Tgt%", "tgtSh")}
+                        {th("Edge", "edge")}
                         {th("SD", "sdPts")}
                         {th("Risk", "risk")}
                         {th("VOR", "vor")}
@@ -772,6 +776,10 @@ export default function FieldEdge() {
                           <td style={{ ...cell, fontWeight: 500 }}>
                             {r.proj.toFixed(1)}
                             {r.injPart ? <span title={"returning from " + r.injPart} style={{ color: T.flag }}> †</span> : null}
+                          </td>
+                          <td style={{ ...cell, color: T.warmGray }}>{r.tgtSh != null && r.tgtSh > 0 ? (r.tgtSh * 100).toFixed(0) + "%" : "—"}</td>
+                          <td style={{ ...cell, color: r.edge == null ? T.warmGray : r.edge >= 15 ? T.pos : r.edge <= -15 ? T.neg : T.black }}>
+                            {r.edge == null ? "—" : (r.edge >= 0 ? "+" : "") + r.edge.toFixed(0)}
                           </td>
                           <td style={cell}>{r.sdPts.toFixed(1)}</td>
                           <td style={{ ...cell, color: r.risk >= 6 ? T.flag : T.black }}>{r.risk.toFixed(1)}</td>

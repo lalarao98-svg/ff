@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install numpy (valuation regressions)
+        run: pip install numpy
       - name: Rebuild dataset from nflverse + market consensus
         run: python3 scripts/build-dataset.py
       - name: Commit if changed
